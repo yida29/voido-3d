@@ -296,18 +296,24 @@ async function main() {
     }
 
     // 3. wallSegs の各セグメントを makeWall で IFC 壁に変換
-    //    ただし「吹抜だけが接する辺」は壁を作らない (吹抜部分には壁も床もない)
+    //    外壁は床版・基礎の側面を覆うため Y方向を上下に延長する
+    //    - 1F外壁: 基礎上面 (Y=-100) 〜 2F床上面 (Y=4040) まで連続
+    //    - 2F外壁: 2F床上面 (Y=4040) 〜 屋根下面 (Y=6465) まで
+    //    内壁は階ごとに通常の高さ
+    const isFirstStorey = levelIdx === 0;
+    const FOUNDATION_TOP = -100; // mm
     for (const ws of wallSegs) {
-      // 吹抜と (実部屋に接続せず) 接している辺は描画しない
-      // touchesVoid && count===1: 吹抜だけが接する → スキップ
-      // touchesVoid && count===2: 吹抜と実部屋が両方接する → 内壁として残す (吹抜手すり代わり)
       if (ws.e.touchesVoid && ws.e.count === 1) continue;
       const isExternal = ws.e.count === 1;
       const thickness = isExternal ? OUT_T : WALL_T;
+      // 外壁だけ Y方向を拡張 (床版・基礎の側面を覆う)
+      const extendDown = isExternal && isFirstStorey ? -FOUNDATION_TOP : 0;
+      const extendUp = isExternal && nextLevel ? SLAB_T : 0;
+      const wallH = wallHeight + extendDown + extendUp;
       for (const seg of ws.segs) {
         const segLen = Math.hypot(seg.b[0] - seg.a[0], seg.b[1] - seg.a[1]);
         if (segLen < 50) continue;
-        makeWall(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, seg.a, seg.b, thickness, wallHeight, isExternal)
+        makeWallAtY(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, seg.a, seg.b, thickness, wallH, -extendDown)
           .forEach((w) => containedProducts.push(w));
       }
     }
@@ -469,6 +475,7 @@ function makePolygonProfile(t: (type: number, args: any[]) => any, poly: [number
   ]);
 }
 
+// 壁を z=0 から立てる版 (互換)
 function makeWall(
   t: (type: number, args: any[]) => any,
   v: (type: number, val: any) => any,
@@ -477,6 +484,31 @@ function makeWall(
   a: [number, number], b: [number, number],
   thickness: number, height: number, _external: boolean,
 ) {
+  return makeWallAtYInternal(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, a, b, thickness, height, 0);
+}
+
+// 壁を任意の z (= IFC の高さ方向) から立てる
+function makeWallAtY(
+  t: (type: number, args: any[]) => any,
+  v: (type: number, val: any) => any,
+  ctx: any, owner: any, storeyPlace: any,
+  origin: any, zDir: any, xDir: any,
+  a: [number, number], b: [number, number],
+  thickness: number, height: number, baseY: number,
+) {
+  // 戻り値は使われていないので push する代わりに containedProducts を呼び出し側で受け取る
+  // 旧APIに合わせて配列を返す
+  return makeWallAtYInternal(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, a, b, thickness, height, baseY);
+}
+
+function makeWallAtYInternal(
+  t: (type: number, args: any[]) => any,
+  v: (type: number, val: any) => any,
+  ctx: any, owner: any, storeyPlace: any,
+  origin: any, zDir: any, xDir: any,
+  a: [number, number], b: [number, number],
+  thickness: number, height: number, baseY: number,
+): any[] {
   const dx = b[0] - a[0];
   const dz = b[1] - a[1];
   const len = Math.hypot(dx, dz);
@@ -495,7 +527,9 @@ function makeWall(
   const points = [p1, p2, p3, p4, p1].map(([x, y]) => t(IFC.IFCCARTESIANPOINT, [[x, y]]));
   const polyline = t(IFC.IFCPOLYLINE, [points]);
   const profile = t(IFC.IFCARBITRARYCLOSEDPROFILEDEF, ['AREA', null, polyline]);
-  const place2d = t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]);
+  // 押し出し位置を baseY だけ Z 方向 (IFC高さ方向) にずらす
+  const baseOrigin = t(IFC.IFCCARTESIANPOINT, [[0, 0, baseY]]);
+  const place2d = t(IFC.IFCAXIS2PLACEMENT3D, [baseOrigin, zDir, xDir]);
   const solid = t(IFC.IFCEXTRUDEDAREASOLID, [profile, place2d, zDir, height]);
   const rep = t(IFC.IFCSHAPEREPRESENTATION, [
     ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [solid],
@@ -507,9 +541,6 @@ function makeWall(
   const wall = t(IFC.IFCWALLSTANDARDCASE, [
     null, owner, v(IFC.IFCLABEL, 'Wall'), null, null, place, shape, null, 'STANDARD',
   ]);
-  // GlobalId は NewIfcEntity の最初に入る
-  // (上では null にしているが web-ifc は自動で振らないので明示的に置き直す)
-  // → CreateIFCGloballyUniqueId で置換
   return [wall];
 }
 

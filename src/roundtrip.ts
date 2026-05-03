@@ -37,8 +37,9 @@ interface YRange { min: number; max: number; tolerance?: number }
 // 例: 2F SLAB は通常床 [4.04, 4.20] か屋根 [6.40, 6.70]
 const YEXPECT: Record<'1F' | '2F', Partial<Record<string, YRange[]>>> = {
   '1F': {
-    IFCSLAB:             [{ min: -0.6, max: 0.20 }], // 床/階段含む
-    IFCWALLSTANDARDCASE: [{ min: 0, max: 3.95 }],
+    IFCSLAB:             [{ min: -0.6, max: 0.20 }], // 床/階段/基礎含む
+    // 1F壁: 内壁 [0, 3.94]、外壁 [-0.10, 4.04] (基礎上面〜2F床上面)
+    IFCWALLSTANDARDCASE: [{ min: 0, max: 3.95 }, { min: -0.15, max: 4.10 }],
   },
   '2F': {
     IFCSLAB:             [
