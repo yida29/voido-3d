@@ -42,13 +42,13 @@
       ],
       "doors": [
         { "$comment": "玄関 (南壁、東寄り、片開 W=910 H=1100)",
-          "wall": "south", "centerX": 9320, "width": 910, "height": 1100, "external": true },
+          "wall": "south", "centerX": 9320, "width": 910, "height": 1100, "external": true, "kind": "swing" },
         { "$comment": "階段ホール → 洋室 (内壁、西寄り)",
-          "wall": "north_internal_z6597", "centerX": 1024, "width": 1000, "height": 2000 },
-        { "$comment": "洗面所 入口 (洋室から)",
-          "wall": "north_internal_z6597", "centerX": 6485, "width": 1000, "height": 2000 },
+          "wall": "north_internal_z6597", "centerX": 1024, "width": 1000, "height": 2000, "kind": "swing" },
+        { "$comment": "洗面所 (脱衣所) 入口 — 引き戸 W=1365 H=2000",
+          "wall": "north_internal_z6597", "centerX": 6485, "width": 1365, "height": 2000, "kind": "sliding" },
         { "$comment": "浴室入口 (洗面所から、北寄り)",
-          "wall": "internal_x7964", "centerZ": 8650, "width": 900, "height": 2000 }
+          "wall": "internal_x7964", "centerZ": 8650, "width": 900, "height": 2000, "kind": "swing" }
       ]
     },
     {
@@ -104,6 +104,20 @@
       "topY": 4040,
       "totalSteps": 14,
       "shape": "u_turn"
+    }
+  ],
+  "external_features": [
+    {
+      "$comment": "玄関アプローチ: バルコニー (デッキ) + 3段階段。バルコニー上面 = 1F床上面 (Y=0、玄関の床と同じレベル)",
+      "type": "entry_porch",
+      "balcony": {
+        "$comment": "玄関ドア (centerX=9320, width=910) の前にデッキを設置。深さ 1500mm",
+        "centerX": 9320, "z": -1500, "width": 2400, "depth": 1500, "topY": 0, "thickness": 200
+      },
+      "stairs": {
+        "$comment": "3段階段。地面 (Y=-565) からバルコニー上面 (Y=0) まで。1段=190mm前後",
+        "centerX": 9320, "z": -2700, "width": 1600, "depth": 1200, "totalRise": 565, "steps": 3
+      }
     }
   ],
   "fixtures": [

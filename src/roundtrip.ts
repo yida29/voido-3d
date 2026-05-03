@@ -29,16 +29,16 @@ const c2 = building.meshes.filter((m) => m.storey === '2F').length;
 // 階別に各メッシュの Y 範囲が期待値内に収まっているか検査する。
 interface YRange { min: number; max: number; tolerance?: number }
 // 1F壁は 2F床下面 (3940mm) まで延ばして階間の隙間を消している
+// 1F SLAB は屋外階段 (Y=-0.56 〜 0) も含むので min を地面 -0.6 まで許容
+// (IfcDoor は now 描画しないので期待値からも除外)
 const YEXPECT: Record<'1F' | '2F', Partial<Record<string, YRange>>> = {
   '1F': {
-    IFCSLAB:             { min: 0,    max: 0.20 },
+    IFCSLAB:             { min: -0.6, max: 0.20 },
     IFCWALLSTANDARDCASE: { min: 0,    max: 3.95 },
-    IFCDOOR:             { min: 0,    max: 2.10 },
   },
   '2F': {
     IFCSLAB:             { min: 4.04, max: 4.20 },
     IFCWALLSTANDARDCASE: { min: 4.04, max: 6.50 },
-    IFCDOOR:             { min: 4.04, max: 6.10 },
   },
 };
 const violations: string[] = [];

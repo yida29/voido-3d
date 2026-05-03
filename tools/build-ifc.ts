@@ -35,6 +35,7 @@ interface FloorplanDoor {
   width: number;
   height: number;
   external?: boolean;
+  kind?: 'swing' | 'sliding';   // swing=開き戸 (省略時), sliding=引き戸
 }
 interface FloorplanLevel {
   name: string;
@@ -209,9 +210,11 @@ async function main() {
     ]);
     containedProducts.push(slab);
 
-    // ----- Walls -----
-    // 各 Space 輪郭の各辺を集めて、重複辺 (= 内壁) と単独辺 (= 外壁) を分ける
-    const edgeMap = new Map<string, { a: [number, number]; b: [number, number]; count: number; rooms: string[] }>();
+    // ----- Walls + Door 開口 -----
+    // 1. 各 Space 輪郭の辺を集める
+    interface Edge { a: [number, number]; b: [number, number]; count: number }
+    const edges: Edge[] = [];
+    const edgeIndex = new Map<string, number>();
     for (const room of level.rooms) {
       if (room.isVoid) continue;
       const poly = room.polygon;
@@ -219,49 +222,151 @@ async function main() {
         const a = poly[i];
         const b = poly[(i + 1) % poly.length];
         const key = edgeKey(a, b);
-        const e = edgeMap.get(key);
-        if (e) { e.count += 1; e.rooms.push(room.name); }
-        else edgeMap.set(key, { a, b, count: 1, rooms: [room.name] });
+        const idx = edgeIndex.get(key);
+        if (idx != null) edges[idx].count += 1;
+        else { edgeIndex.set(key, edges.length); edges.push({ a, b, count: 1 }); }
       }
     }
 
-    for (const e of edgeMap.values()) {
-      const isExternal = e.count === 1;
+    // 2. 各ドアについて「乗っている辺」を見つけ、その辺を分割記録
+    // 結果: 各辺 → [そのまま] or [ドア両側の 2 セグメント]
+    interface Segment { a: [number, number]; b: [number, number] }
+    interface SlidingPanel { a: [number, number]; b: [number, number]; thickness: number; height: number }
+    const wallSegs: { e: Edge; segs: Segment[]; lintels: { center: [number, number]; w: number; bottomY: number; topY: number }[] }[] =
+      edges.map((e) => ({ e, segs: [{ a: e.a, b: e.b }], lintels: [] }));
+    const slidingPanels: SlidingPanel[] = [];
+
+    for (const door of level.doors) {
+      const cx = door.centerX ?? null;
+      const cz = door.centerZ ?? null;
+      // ドアが壁面上にある中心点を決める (片方欠けてる場合はそこを推定)
+      // 実装簡略: 辺ごとに「ドア中心がその辺の線分上にあるか」をテスト
+      let bestIdx = -1;
+      let bestT = 0; // 0..1
+      let bestDist = Infinity;
+      for (let i = 0; i < wallSegs.length; i++) {
+        const e = wallSegs[i].e;
+        const x = cx ?? (e.a[0] + e.b[0]) / 2;
+        const z = cz ?? (e.a[1] + e.b[1]) / 2;
+        const dx = e.b[0] - e.a[0], dz = e.b[1] - e.a[1];
+        const len2 = dx * dx + dz * dz;
+        if (len2 === 0) continue;
+        const t = ((x - e.a[0]) * dx + (z - e.a[1]) * dz) / len2;
+        if (t < 0 || t > 1) continue;
+        const projX = e.a[0] + t * dx;
+        const projZ = e.a[1] + t * dz;
+        const d2 = (x - projX) ** 2 + (z - projZ) ** 2;
+        if (d2 < bestDist) { bestDist = d2; bestIdx = i; bestT = t; }
+      }
+      if (bestIdx < 0 || bestDist > 1.0) {
+        console.warn(`[door] not on any wall edge:`, door);
+        continue;
+      }
+      // 辺を分割: 元の segs[0] を「a → ドア左端」「ドア右端 → b」に置き換え
+      const ws = wallSegs[bestIdx];
+      const e = ws.e;
+      const dx = e.b[0] - e.a[0], dz = e.b[1] - e.a[1];
+      const len = Math.hypot(dx, dz);
+      const ux = dx / len, uz = dz / len;
+      const halfW = door.width / 2;
+      const cxOnEdge = e.a[0] + bestT * dx;
+      const czOnEdge = e.a[1] + bestT * dz;
+      const leftX  = cxOnEdge - ux * halfW, leftZ  = czOnEdge - uz * halfW;
+      const rightX = cxOnEdge + ux * halfW, rightZ = czOnEdge + uz * halfW;
+      // 既存の segs から、この辺と一致するセグメントを差し替え (ドアが2個並ぶケースは未対応)
+      ws.segs = [
+        { a: e.a, b: [leftX, leftZ] },
+        { a: [rightX, rightZ], b: e.b },
+      ];
+      // ドア上のリンテル (要らなくする: 開けっぱなしなので頭上もフリーに)
+      // 引き戸は壁の脇に薄板 (見た目のため) を1枚追加
+      if (door.kind === 'sliding') {
+        // 開いた状態を表現: 引き戸が "壁にスライドして収納された" 状態。
+        // 開口の右側に、ドア幅分の薄板を残す
+        const px = rightX, pz = rightZ;
+        const px2 = rightX + ux * door.width, pz2 = rightZ + uz * door.width;
+        slidingPanels.push({ a: [px, pz], b: [px2, pz2], thickness: 30, height: door.height });
+      }
+    }
+
+    // 3. wallSegs の各セグメントを makeWall で IFC 壁に変換
+    for (const ws of wallSegs) {
+      const isExternal = ws.e.count === 1;
       const thickness = isExternal ? OUT_T : WALL_T;
-      // 同じ辺が2つの Space 両方から登録されると count=2 になるが、
-      // ここでは中心線方式で 1本だけ作る。
-      makeWall(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, e.a, e.b, thickness, wallHeight, isExternal)
+      for (const seg of ws.segs) {
+        // 長さが極小なら出さない
+        const segLen = Math.hypot(seg.b[0] - seg.a[0], seg.b[1] - seg.a[1]);
+        if (segLen < 50) continue;
+        makeWall(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, seg.a, seg.b, thickness, wallHeight, isExternal)
+          .forEach((w) => containedProducts.push(w));
+      }
+    }
+
+    // 4. 引き戸パネル
+    for (const p of slidingPanels) {
+      makeWall(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, p.a, p.b, p.thickness, p.height, false)
         .forEach((w) => containedProducts.push(w));
     }
 
-    // ----- Doors (簡易: 開口は作らず、壁のそばに IfcDoor を配置) -----
-    // 完全な開口処理 (IfcOpeningElement + IfcRelVoidsElement) は後続イテレーションで。
-    for (const door of level.doors) {
-      const cx = door.centerX ?? 0;
-      const cz = door.centerZ ?? 0;
-      const w = door.width;
-      const h = door.height;
-      const profile = t(IFC.IFCRECTANGLEPROFILEDEF, [
-        v(IFC.IFCLABEL, 'AREA'), null,
-        t(IFC.IFCAXIS2PLACEMENT2D, [
-          t(IFC.IFCCARTESIANPOINT, [[0, 0]]),
-          t(IFC.IFCDIRECTION, [[1, 0]]),
-        ]),
-        w, 50,
-      ]);
-      const place2d = t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]);
-      const solid = t(IFC.IFCEXTRUDEDAREASOLID, [profile, place2d, zDir, h]);
-      const rep = t(IFC.IFCSHAPEREPRESENTATION, [
-        ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [solid],
-      ]);
-      const shape = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [rep]]);
-      // IFC は (X東, Y北, Z上)。cz は北方向の座標なので Y に渡す。Z=0 (床面)
-      const place = localPlace(storeyPlace, cx, cz, 0);
-      const doorEnt = t(IFC.IFCDOOR, [
-        guid(), owner, v(IFC.IFCLABEL, door.external ? 'Entry' : 'Door'),
-        null, null, place, shape, null, h, w, 'DOOR', 'NOTDEFINED', null,
-      ]);
-      containedProducts.push(doorEnt);
+    // 5. 1F のときだけ、external_features (玄関アプローチなど) を生成
+    if (level.name === '1F' && Array.isArray((plan as any).external_features)) {
+      for (const f of (plan as any).external_features as any[]) {
+        if (f.type === 'entry_porch') {
+          // バルコニー (デッキ): 矩形スラブ
+          if (f.balcony) {
+            const b = f.balcony;
+            const x0 = b.centerX - b.width / 2;
+            const z0 = b.z;
+            const slabPolyB: [number, number][] = [
+              [x0, z0], [x0 + b.width, z0],
+              [x0 + b.width, z0 + b.depth], [x0, z0 + b.depth],
+            ];
+            const profB = makePolygonProfile(t, slabPolyB);
+            const placeB = localPlace(storeyPlace, 0, 0, b.topY - b.thickness);
+            const place2dB = t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]);
+            const solidB = t(IFC.IFCEXTRUDEDAREASOLID, [profB, place2dB, zDir, b.thickness]);
+            const repB = t(IFC.IFCSHAPEREPRESENTATION, [
+              ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [solidB],
+            ]);
+            const shapeB = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [repB]]);
+            const slabB = t(IFC.IFCSLAB, [
+              guid(), owner, v(IFC.IFCLABEL, 'entry_balcony'), null, null,
+              placeB, shapeB, null, 'BASESLAB',
+            ]);
+            containedProducts.push(slabB);
+          }
+          // 階段: 各段を順に Slab で
+          if (f.stairs) {
+            const s = f.stairs;
+            const stepRise = s.totalRise / s.steps;
+            const stepDepth = s.depth / s.steps;
+            for (let i = 0; i < s.steps; i++) {
+              const x0 = s.centerX - s.width / 2;
+              // i 段目の z 位置 (北に進む)
+              const zStart = s.z + i * stepDepth;
+              const zEnd = zStart + (s.depth - i * stepDepth);
+              const stepPoly: [number, number][] = [
+                [x0, zStart], [x0 + s.width, zStart],
+                [x0 + s.width, zEnd], [x0, zEnd],
+              ];
+              const profS = makePolygonProfile(t, stepPoly);
+              const stepBottomY = -s.totalRise + i * stepRise;
+              const placeS = localPlace(storeyPlace, 0, 0, stepBottomY);
+              const place2dS = t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]);
+              const solidS = t(IFC.IFCEXTRUDEDAREASOLID, [profS, place2dS, zDir, stepRise]);
+              const repS = t(IFC.IFCSHAPEREPRESENTATION, [
+                ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [solidS],
+              ]);
+              const shapeS = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [repS]]);
+              const slabS = t(IFC.IFCSLAB, [
+                guid(), owner, v(IFC.IFCLABEL, `entry_step_${i}`), null, null,
+                placeS, shapeS, null, 'BASESLAB',
+              ]);
+              containedProducts.push(slabS);
+            }
+          }
+        }
+      }
     }
 
     // 階 → コンテンツ
