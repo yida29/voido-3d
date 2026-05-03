@@ -5,7 +5,6 @@ import { createControls } from './controls';
 import { Collider } from './collision';
 
 const canvas = document.getElementById('app') as HTMLCanvasElement;
-const overlay = document.getElementById('overlay') as HTMLDivElement;
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -29,8 +28,14 @@ async function init() {
   const building = await loadVoidoIFC(ifcUrl);
   scene.add(building.root);
 
+  const wbb = new THREE.Box3().setFromObject(building.root);
+  console.log('[BUILDING] world bbox',
+    `min(${wbb.min.x.toFixed(2)}, ${wbb.min.y.toFixed(2)}, ${wbb.min.z.toFixed(2)})`,
+    `max(${wbb.max.x.toFixed(2)}, ${wbb.max.y.toFixed(2)}, ${wbb.max.z.toFixed(2)})`,
+    `meshes=${building.meshes.length}`);
+
   const collider = new Collider(building.walls);
-  const controls = createControls(camera, overlay, collider);
+  const controls = createControls(camera, collider, wbb);
   scene.add(controls.object);
 
   const clock = new THREE.Clock();
@@ -45,5 +50,6 @@ async function init() {
 
 init().catch((err) => {
   console.error('init failed:', err);
-  overlay.innerHTML = `<h1>読み込みエラー</h1><p>${(err as Error).message}</p>`;
+  const hud = document.getElementById('hud');
+  if (hud) hud.innerHTML = `<b style="color:#f66">エラー</b>: ${(err as Error).message}`;
 });

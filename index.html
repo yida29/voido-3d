@@ -6,24 +6,16 @@
     <title>voido 3D 見取り図</title>
     <style>
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #87ceeb; font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif; }
-      #app { width: 100vw; height: 100vh; display: block; }
-
-      #overlay {
-        position: absolute; inset: 0;
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-        background: rgba(0, 0, 0, 0.55); color: #fff; cursor: pointer; z-index: 10;
-        text-align: center;
-      }
-      #overlay h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: 0.05em; }
-      #overlay p  { margin: 4px 0; font-size: 14px; opacity: 0.85; }
-      #overlay .start { margin-top: 24px; padding: 12px 32px; border: 1px solid #fff; border-radius: 999px; font-size: 14px; }
+      #app { width: 100vw; height: 100vh; display: block; cursor: crosshair; }
 
       #hud {
         position: absolute; top: 12px; left: 12px;
         color: #fff; font-size: 12px; line-height: 1.6;
         background: rgba(0, 0, 0, 0.4); padding: 10px 14px; border-radius: 6px;
-        pointer-events: none; z-index: 5;
+        pointer-events: auto; z-index: 5;
       }
+      #hud a { color: #6cf; text-decoration: none; }
+      #hud a:hover { text-decoration: underline; }
       #crosshair {
         position: absolute; top: 50%; left: 50%; width: 6px; height: 6px;
         margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(255,255,255,0.7);
@@ -33,22 +25,13 @@
   </head>
   <body>
     <canvas id="app"></canvas>
-
-    <div id="hud">
-      <div><b>voido</b> 3D 見取り図</div>
-      <div>WASD: 移動 / Shift: ダッシュ / マウス: 視点</div>
-      <div>ESC: ロック解除</div>
-    </div>
-
     <div id="crosshair"></div>
-
-    <div id="overlay">
-      <h1>voido 3D 見取り図</h1>
-      <p>クリックで開始 — WASD で移動、マウスで視点回転</p>
-      <p>ESC でカーソルロック解除</p>
-      <div class="start">クリックして開始</div>
+    <div id="hud">
+      <div><b>voido</b> 3D 見取り図 — <a href="roundtrip.html">📐 ラウンドトリップ検証</a></div>
+      <div>クリックでマウスロック / ESC で解除</div>
+      <div>WASD: 移動 / Shift: ダッシュ / マウス: 視点</div>
+      <div>1: 1F / 2: 2F に瞬間移動</div>
     </div>
-
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

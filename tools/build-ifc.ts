@@ -143,7 +143,11 @@ async function main() {
   // === per-level ===
   const storeyEntities: any[] = [];
   for (const level of plan.levels) {
-    const storeyPlace = localPlace(buildingPlace, 0, level.floorY, 0);
+    // storey の placement は Y=0 (= 建物 placement と同じ)。
+    // 階高 (Elevation) は IfcBuildingStorey の属性で表現する。
+    // これにより web-ifc 側は中身ジオメトリの Y を変えず、
+    // ローダー (src/building.ts) で Elevation を加算するだけで正しい階に置ける。
+    const storeyPlace = localPlace(buildingPlace, 0, 0, 0);
     const storey = t(IFC.IFCBUILDINGSTOREY, [
       guid(), owner, v(IFC.IFCLABEL, level.name), null, null, storeyPlace, null, null,
       'ELEMENT', level.floorY,
@@ -239,7 +243,8 @@ async function main() {
         ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [solid],
       ]);
       const shape = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [rep]]);
-      const place = localPlace(storeyPlace, cx, 0, cz);
+      // IFC は (X東, Y北, Z上)。cz は北方向の座標なので Y に渡す。Z=0 (床面)
+      const place = localPlace(storeyPlace, cx, cz, 0);
       const doorEnt = t(IFC.IFCDOOR, [
         guid(), owner, v(IFC.IFCLABEL, door.external ? 'Entry' : 'Door'),
         null, null, place, shape, null, h, w, 'DOOR', 'NOTDEFINED', null,

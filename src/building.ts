@@ -56,25 +56,22 @@ export async function loadVoidoIFC(url: string): Promise<VoidoBuilding> {
   const buf = new Uint8Array(await (await fetch(url)).arrayBuffer());
   const modelID = ifc.OpenModel(buf);
 
-  // expressID → storey 名 のマップを spatial structure から構築
-  const storeyMap = new Map<number, '1F' | '2F'>();
+  // expressID → storey 名/elevation(mm) のマップを spatial structure から構築
+  interface StoreyInfo { name: '1F' | '2F'; elevationMm: number }
+  const storeyMap = new Map<number, StoreyInfo>();
   try {
     const tree = await ifc.properties.getSpatialStructure(modelID, true);
     walkStorey(tree, null);
-    function walkStorey(node: any, currentStorey: '1F' | '2F' | null) {
-      let next = currentStorey;
-      // type は数値か文字列、文字列は大文字混在
+    function walkStorey(node: any, current: StoreyInfo | null) {
+      let next = current;
       const typeRaw = node.type;
       const typeStr = typeof typeRaw === 'number'
         ? (TYPE_NAME[typeRaw] || '')
         : String(typeRaw || '').toUpperCase();
       if (typeStr === 'IFCBUILDINGSTOREY') {
-        const name = node.Name?.value ?? node.LongName?.value ?? '';
         const elevation = node.Elevation?.value ?? 0;
-        // elevation で 1F/2F を確定 (建物名でも判定するが elevation がより安全)
-        if (elevation < 100) next = '1F';
-        else next = '2F';
-        console.log(`[STOREY] expressID=${node.expressID}, name=${name}, elevation=${elevation} → ${next}`);
+        const sName: '1F' | '2F' = elevation < 100 ? '1F' : '2F';
+        next = { name: sName, elevationMm: elevation };
       }
       if (typeof node.expressID === 'number' && next) {
         storeyMap.set(node.expressID, next);
@@ -83,7 +80,6 @@ export async function loadVoidoIFC(url: string): Promise<VoidoBuilding> {
         for (const c of node.children) walkStorey(c, next);
       }
     }
-    console.log('[STOREY MAP] size=', storeyMap.size);
   } catch (e) {
     console.warn('storey map failed:', e);
   }
@@ -129,9 +125,15 @@ export async function loadVoidoIFC(url: string): Promise<VoidoBuilding> {
       bg.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1));
 
       // 配置行列。web-ifc の flatTransformation は列優先 (THREE.Matrix4 と同じ)
-      // 配置行列を適用 (web-ifc は中心化された頂点を返し、translation 成分で world 配置する)
       const arr = placed.flatTransformation as unknown as number[];
       bg.applyMatrix4(new THREE.Matrix4().fromArray(arr));
+
+      // web-ifc は IfcBuildingStorey の Elevation を flatTransformation に
+      // 反映してくれない (確認済み) ので、ここで手動で Y 方向にずらす。
+      const storeyInfo = storeyMap.get(expressID);
+      if (storeyInfo && storeyInfo.elevationMm !== 0) {
+        bg.translate(0, storeyInfo.elevationMm, 0);
+      }
 
       // mm → m
       bg.scale(0.001, 0.001, 0.001);
@@ -155,7 +157,7 @@ export async function loadVoidoIFC(url: string): Promise<VoidoBuilding> {
       // 階判定: spatial structure の階層情報を優先
       bg.computeBoundingBox();
       const bb = bg.boundingBox!;
-      const storey: '1F' | '2F' | 'unknown' = storeyMap.get(expressID) ?? 'unknown';
+      const storey: '1F' | '2F' | 'unknown' = storeyMap.get(expressID)?.name ?? 'unknown';
 
       meshes.push({ mesh, type: typeName, expressID, storey, localMinY: bb.min.y, localMaxY: bb.max.y });
     }
