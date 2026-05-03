@@ -45,9 +45,9 @@ const YEXPECT: Record<'1F' | '2F', Partial<Record<string, YRange[]>>> = {
   '2F': {
     IFCSLAB:             [
       { min: 4.04, max: 4.20 }, // 2F 床
-      { min: 6.40, max: 6.70 }, // 屋根
+      { min: 6.80, max: 7.20 }, // 屋根 (2F天井 2900 + floor 4040)
     ],
-    IFCWALLSTANDARDCASE: [{ min: 4.04, max: 6.50 }],
+    IFCWALLSTANDARDCASE: [{ min: 4.04, max: 7.00 }],
   },
 };
 const violations: string[] = [];

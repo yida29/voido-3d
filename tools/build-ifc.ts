@@ -340,6 +340,40 @@ async function main() {
         .forEach((w) => containedProducts.push(w));
     }
 
+    // 4.5 窓: 外壁面の前面に薄いガラス板を貼り付ける
+    //   wall: 'south'/'north' → centerX 必須、辺は z=0 / z=D
+    //   wall: 'east'/'west'   → centerZ 必須、辺は x=W / x=0
+    const windows = (level as any).windows as Array<any> | undefined;
+    if (Array.isArray(windows)) {
+      for (const win of windows) {
+        // 窓の中心点と方向 (x方向か z方向か)
+        let cx = 0, cz = 0;       // 窓中心 (mm, 平面上)
+        let isHoriz = false;       // true=南北面 (X方向)、false=東西面 (Z方向)
+        if (win.wall === 'south') { cz = 0;             cx = win.centerX; isHoriz = true; }
+        else if (win.wall === 'north') { cz = D;        cx = win.centerX; isHoriz = true; }
+        else if (win.wall === 'west')  { cx = 0;        cz = win.centerZ; isHoriz = false; }
+        else if (win.wall === 'east')  { cx = W;        cz = win.centerZ; isHoriz = false; }
+        else { console.warn(`[window] unknown wall:`, win); continue; }
+
+        const halfW = win.width / 2;
+        // 板状ガラス: 幅=win.width, 高さ=win.height, 厚=20mm
+        // 配置: 平面上は壁中心線に乗せる、Y方向は sillY..(sillY+height)
+        let a, b;
+        if (isHoriz) {
+          a = [cx - halfW, cz];
+          b = [cx + halfW, cz];
+        } else {
+          a = [cx, cz - halfW];
+          b = [cx, cz + halfW];
+        }
+        const winThick = OUT_T + 4; // 壁厚より少し外に出して見えるように
+        // 窓 = IFCWALLSTANDARDCASE で 'window' という名前で出す。building.ts 側で色分けする
+        makeNamedSlab(t, v, ctx, owner, storeyPlace, origin, zDir, xDir,
+          a, b, winThick, win.height, win.sillY, 'window')
+          .forEach((wEnt) => containedProducts.push(wEnt));
+      }
+    }
+
     // 5. 1F のときだけ、external_features (玄関アプローチ・基礎など) を生成
     if (level.name === '1F' && Array.isArray((plan as any).external_features)) {
       for (const f of (plan as any).external_features as any[]) {
@@ -575,6 +609,46 @@ function makeWallAtYInternal(
   ]);
   const wall = t(IFC.IFCWALLSTANDARDCASE, [
     null, owner, v(IFC.IFCLABEL, 'Wall'), null, null, place, shape, null, 'STANDARD',
+  ]);
+  return [wall];
+}
+
+// 窓: makeWallAtY と同じ形だが Name='window' で出力
+function makeNamedSlab(
+  t: (type: number, args: any[]) => any,
+  v: (type: number, val: any) => any,
+  ctx: any, owner: any, storeyPlace: any,
+  origin: any, zDir: any, xDir: any,
+  a: [number, number], b: [number, number],
+  thickness: number, height: number, baseY: number,
+  name: string,
+): any[] {
+  const dx = b[0] - a[0];
+  const dz = b[1] - a[1];
+  const len = Math.hypot(dx, dz);
+  if (len < 1) return [];
+  const nx = -dz / len;
+  const nz =  dx / len;
+  const half = thickness / 2;
+  const p1 = [a[0] + nx * half, a[1] + nz * half];
+  const p2 = [b[0] + nx * half, b[1] + nz * half];
+  const p3 = [b[0] - nx * half, b[1] - nz * half];
+  const p4 = [a[0] - nx * half, a[1] - nz * half];
+  const points = [p1, p2, p3, p4, p1].map(([x, y]) => t(IFC.IFCCARTESIANPOINT, [[x, y]]));
+  const polyline = t(IFC.IFCPOLYLINE, [points]);
+  const profile = t(IFC.IFCARBITRARYCLOSEDPROFILEDEF, ['AREA', null, polyline]);
+  const baseOrigin = t(IFC.IFCCARTESIANPOINT, [[0, 0, baseY]]);
+  const place2d = t(IFC.IFCAXIS2PLACEMENT3D, [baseOrigin, zDir, xDir]);
+  const solid = t(IFC.IFCEXTRUDEDAREASOLID, [profile, place2d, zDir, height]);
+  const rep = t(IFC.IFCSHAPEREPRESENTATION, [
+    ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [solid],
+  ]);
+  const shape = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [rep]]);
+  const place = t(IFC.IFCLOCALPLACEMENT, [
+    storeyPlace, t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]),
+  ]);
+  const wall = t(IFC.IFCWALLSTANDARDCASE, [
+    null, owner, v(IFC.IFCLABEL, name), null, null, place, shape, null, 'STANDARD',
   ]);
   return [wall];
 }

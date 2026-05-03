@@ -34,16 +34,35 @@ for (const [k, val] of Object.entries(IFC)) {
   if (typeof val === 'number' && k.startsWith('IFC')) TYPE_NAME[val] = k;
 }
 
+// voido の Google Maps 写真をもとに色味を設定:
+//   - 外壁: ネイビーブルー (#2e3f55 程度)
+//   - 屋根: 濃いグレー (#3a3a3a)
+//   - 玄関階段・デッキ: 木目 (暖色 #8b5a3c)
+//   - 基礎: 白いコンクリート (#d8d3cb)
+//   - 内壁: 明るいグレージュ (室内側)
 const COLORS: Record<string, number> = {
-  IFCWALL: 0xead9c0,
-  IFCWALLSTANDARDCASE: 0xead9c0,
-  IFCSLAB: 0x8b6543,
-  IFCDOOR: 0x6b4a30,
-  IFCWINDOW: 0xaad8ff,
-  IFCSPACE: 0x000000, // hidden
-  IFCSTAIR: 0x6b4a30,
-  IFCROOF: 0x553a2a,
+  IFCWALL: 0x3d5575,            // 外壁ネイビー (太陽光下で映える明るめ)
+  IFCWALLSTANDARDCASE: 0x3d5575,
+  IFCSLAB: 0xd8d3cb,            // 基礎・床版は白コンクリート
+  IFCDOOR: 0x222222,
+  IFCWINDOW: 0xaad8ff,          // ガラス: 薄い空色
+  IFCSPACE: 0x000000,
+  IFCSTAIR: 0xa07050,
+  IFCROOF: 0x4d4d4d,            // 屋根 濃グレー (もう少し明るく)
 };
+
+// IfcSlab/IfcWall の Name から色を上書き
+function colorByName(name: string | undefined, typeName: string): number | undefined {
+  if (!name) return undefined;
+  if (name === 'foundation') return 0xd8d3cb;
+  if (name === 'roof') return 0x3a3a3a;
+  if (name === 'entry_balcony') return 0x8b5a3c;
+  if (name.startsWith('entry_step')) return 0x8b5a3c;
+  if (name === 'window') return 0xaad8ff;               // ガラス窓
+  if (name.endsWith('_slab') || name.includes('_slab_')) return 0x8b5a3c;
+  void typeName;
+  return undefined;
+}
 
 export async function loadVoidoIFC(url: string): Promise<VoidoBuilding> {
   const ifc = new WebIFC.IfcAPI();
@@ -99,6 +118,12 @@ export async function loadVoidoIFC(url: string): Promise<VoidoBuilding> {
     } catch { /* ignore */ }
 
     const isSpace = typeName === 'IFCSPACE';
+    // Name 属性を取得 (色決定に使用)
+    let entName: string | undefined = undefined;
+    try {
+      const props = ifc.GetLine(modelID, expressID, false) as any;
+      entName = props?.Name?.value ?? undefined;
+    } catch { /* ignore */ }
 
     const placedGeoms = flatMesh.geometries;
     for (let i = 0; i < placedGeoms.size(); i++) {
@@ -138,7 +163,7 @@ export async function loadVoidoIFC(url: string): Promise<VoidoBuilding> {
       // mm → m
       bg.scale(0.001, 0.001, 0.001);
 
-      const color = COLORS[typeName] ?? 0xc0c0c0;
+      const color = colorByName(entName, typeName) ?? COLORS[typeName] ?? 0xc0c0c0;
       const material = new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0.0 });
       const mesh = new THREE.Mesh(bg, material);
       mesh.castShadow = true;

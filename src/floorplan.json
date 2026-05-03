@@ -41,20 +41,33 @@
         }
       ],
       "doors": [
-        { "$comment": "玄関 (南壁、東寄り、片開 W=910 H=1100)",
-          "wall": "south", "centerX": 9320, "width": 910, "height": 1100, "external": true, "kind": "swing" },
+        { "$comment": "玄関 (南壁、東寄り、片開 W=910 H=2000)。Google Maps写真ではフルガラスドア",
+          "wall": "south", "centerX": 9320, "width": 910, "height": 2000, "external": true, "kind": "swing" },
         { "$comment": "階段ホール → 洋室 (内壁、西寄り)",
           "wall": "north_internal_z6597", "centerX": 1024, "width": 1000, "height": 2000, "kind": "swing" },
         { "$comment": "洗面所 (脱衣所) 入口 — 引き戸 W=1365 H=2000",
           "wall": "north_internal_z6597", "centerX": 6485, "width": 1365, "height": 2000, "kind": "sliding" },
         { "$comment": "浴室入口 (洗面所から、北寄り)",
           "wall": "internal_x7964", "centerZ": 8650, "width": 900, "height": 2000, "kind": "swing" }
+      ],
+      "windows": [
+        { "$comment": "南面 1F: 玄関左の大型掃き出し窓",
+          "wall": "south", "centerX": 5500, "sillY": 200, "width": 2700, "height": 2000 },
+        { "$comment": "西面 1F: 小窓",
+          "wall": "west", "centerZ": 4500, "sillY": 1000, "width": 900, "height": 1100 },
+        { "$comment": "北面 1F: 浴室の小窓",
+          "wall": "north", "centerX": 9442, "sillY": 1500, "width": 600, "height": 600 },
+        { "$comment": "北面 1F: 洗面所の窓",
+          "wall": "north", "centerX": 6485, "sillY": 1500, "width": 1500, "height": 600 },
+        { "$comment": "東面 1F: 居室窓",
+          "wall": "east", "centerZ": 3000, "sillY": 1000, "width": 1200, "height": 1200 }
       ]
     },
     {
       "name": "2F",
       "floorY": 4040,
-      "ceilingHeight": 2425,
+      "$comment-ceilingHeight": "PDF上は2425だが、写真では1Fとほぼ同等の高さに見える。屋根空間 (切妻) を含めて2900に",
+      "ceilingHeight": 2900,
       "rooms": [
         {
           "name": "west_main",
@@ -92,6 +105,20 @@
           "wall": "internal_x6825", "centerZ": 7600, "width": 900, "height": 2000 },
         { "$comment": "東部屋を上下分割する内壁の開口 (中央)",
           "wall": "internal_z4550_east", "centerX": 8872, "width": 900, "height": 2000 }
+      ],
+      "windows": [
+        { "$comment": "南面 2F: 縦長窓×2 (写真3で右寄り)",
+          "wall": "south", "centerX": 8500, "sillY": 800, "width": 600, "height": 1200 },
+        { "$comment": "南面 2F: 縦長窓×2",
+          "wall": "south", "centerX": 9700, "sillY": 800, "width": 600, "height": 1200 },
+        { "$comment": "西面 2F: 縦長窓×2",
+          "wall": "west", "centerZ": 3000, "sillY": 1000, "width": 500, "height": 1200 },
+        { "$comment": "西面 2F: 縦長窓×2",
+          "wall": "west", "centerZ": 5500, "sillY": 1000, "width": 500, "height": 1200 },
+        { "$comment": "北面 2F: 縦長窓",
+          "wall": "north", "centerX": 8500, "sillY": 800, "width": 700, "height": 1200 },
+        { "$comment": "東面 2F: 縦長窓",
+          "wall": "east", "centerZ": 6500, "sillY": 1000, "width": 600, "height": 1200 }
       ]
     }
   ],
