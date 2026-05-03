@@ -370,6 +370,21 @@ async function main() {
       if (a[1] === D && b[1] === D) return true;       // 北辺
       return false;
     };
+    // 辺の方角を判定 ('S'/'N'/'E'/'W'/null=内壁)
+    const sideOfEdge = (a: [number, number], b: [number, number]): string | null => {
+      if (a[1] === 0 && b[1] === 0) return 'S';
+      if (a[1] === D && b[1] === D) return 'N';
+      if (a[0] === 0 && b[0] === 0) return 'W';
+      if (a[0] === W && b[0] === W) return 'E';
+      return null;
+    };
+    // 壁を統一して作るヘルパー (方角ごとに name を変える → building.ts で色分け)
+    const emitWall = (a: [number, number], b: [number, number], thick: number, h: number, by: number, side: string | null) => {
+      const name = side ? `wall_${side}` : 'wall_inner';
+      makeNamedSlab(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, a, b, thick, h, by, name)
+        .forEach((w) => containedProducts.push(w));
+    };
+
     for (const ws of wallSegs) {
       if (ws.e.touchesVoid && ws.e.count === 1 && !isOnOuterEdge(ws.e.a, ws.e.b)) continue;
       const isExternal = ws.e.count === 1;
@@ -377,8 +392,9 @@ async function main() {
       const extendDown = isExternal && isFirstStorey ? -FOUNDATION_TOP : 0;
       const extendUp = isExternal && nextLevel ? SLAB_T + 100 : 0;
       const wallH = wallHeight + extendDown + extendUp;
-      const baseY = -extendDown;          // 外壁の下端 Y
-      const topY = baseY + wallH;          // 外壁の上端 Y
+      const baseY = -extendDown;
+      const topY = baseY + wallH;
+      const side = isExternal ? sideOfEdge(ws.e.a, ws.e.b) : null;
 
       for (const seg of ws.segs) {
         const segLen = Math.hypot(seg.b[0] - seg.a[0], seg.b[1] - seg.a[1]);
@@ -395,33 +411,18 @@ async function main() {
           .filter((w) => w.tHi > w.tLo + 0.001);
 
         if (winsInSeg.length === 0) {
-          makeWallAtY(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, seg.a, seg.b, thickness, wallH, baseY)
-            .forEach((w) => containedProducts.push(w));
+          emitWall(seg.a, seg.b, thickness, wallH, baseY, side);
           continue;
         }
-        // 窓ごとに seg を「左壁・腰壁・垂れ壁・右壁」に分割
-        // 簡易: 1つの seg に窓1つだけがあるケースのみサポート
-        const win = winsInSeg[0]; // 複数あれば最初のだけ (実装簡略)
+        const win = winsInSeg[0];
         const dx = ws.e.b[0] - ws.e.a[0], dz = ws.e.b[1] - ws.e.a[1];
         const winLeft: [number, number]  = [ws.e.a[0] + win.tLo * dx, ws.e.a[1] + win.tLo * dz];
         const winRight: [number, number] = [ws.e.a[0] + win.tHi * dx, ws.e.a[1] + win.tHi * dz];
-        // 左壁: seg.a → winLeft (フル高)
-        makeWallAtY(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, seg.a, winLeft, thickness, wallH, baseY)
-          .forEach((w) => containedProducts.push(w));
-        // 腰壁: winLeft → winRight、Y=baseY..win.sillY
-        if (win.sillY > baseY) {
-          makeWallAtY(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, winLeft, winRight, thickness, win.sillY - baseY, baseY)
-            .forEach((w) => containedProducts.push(w));
-        }
-        // 垂れ壁: winLeft → winRight、Y=(win.sillY+win.height)..topY
+        emitWall(seg.a, winLeft, thickness, wallH, baseY, side);
+        if (win.sillY > baseY) emitWall(winLeft, winRight, thickness, win.sillY - baseY, baseY, side);
         const winTop = win.sillY + win.height;
-        if (winTop < topY) {
-          makeWallAtY(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, winLeft, winRight, thickness, topY - winTop, winTop)
-            .forEach((w) => containedProducts.push(w));
-        }
-        // 右壁: winRight → seg.b (フル高)
-        makeWallAtY(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, winRight, seg.b, thickness, wallH, baseY)
-          .forEach((w) => containedProducts.push(w));
+        if (winTop < topY) emitWall(winLeft, winRight, thickness, topY - winTop, winTop, side);
+        emitWall(winRight, seg.b, thickness, wallH, baseY, side);
       }
     }
 
@@ -525,27 +526,36 @@ async function main() {
       }
     }
 
-    // 6. 最上階なら屋根 (大屋根スラブ) を追加して雨風を凌げるようにする
+    // 6. 最上階なら切妻屋根を追加 (棟は南北方向、東西に下る)
+    //    写真3で voido は片流れに近い切妻屋根
     if (!nextLevel) {
-      const ROOF_T = 200; // 屋根厚 mm
-      const overhang = 90; // 軒の出 mm = 外壁の外側面と一致 (外形 + OUT_T/2)。
-                            // これより大きいと軒下に影で「黒い帯」ができ隙間に見える
-      const roofPoly: [number, number][] = [
-        [-overhang, -overhang],
-        [plan.outline.width + overhang, -overhang],
-        [plan.outline.width + overhang, plan.outline.depth + overhang],
-        [-overhang, plan.outline.depth + overhang],
-      ];
-      const roofProf = makePolygonProfile(t, roofPoly);
-      // 屋根下面 = 当階の壁上端 = ceilingHeight (storey elevation は building.ts ローダー側で加算される)
+      const overhang = 90;          // 軒の出 mm
+      const gableH = 1500;          // 棟の高さ (壁上端からの差)
       const roofBottomY = level.ceilingHeight;
-      const roofPlace = localPlace(storeyPlace, 0, 0, roofBottomY);
-      const roofPlace2d = t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]);
-      const roofSolid = t(IFC.IFCEXTRUDEDAREASOLID, [roofProf, roofPlace2d, zDir, ROOF_T]);
+      // 三角プロファイル (XY平面)
+      // 底辺: (-overhang, 0) -- (W+overhang, 0)
+      // 頂点: (W/2, gableH)
+      const roofProf = makePolygonProfile(t, [
+        [-overhang, 0],
+        [plan.outline.width + overhang, 0],
+        [plan.outline.width / 2, gableH],
+      ]);
+      // 押し出し: Z軸 (建物の奥行=南北方向)
+      // 配置: roofBottomY = 屋根下面、Z=-overhang から D+overhang まで
+      const roofOrigin = t(IFC.IFCCARTESIANPOINT, [[0, 0, roofBottomY]]);
+      const roofPlace2d = t(IFC.IFCAXIS2PLACEMENT3D, [roofOrigin, zDir, xDir]);
+      // しかし extruded direction も zDir (高さ方向) に固定されている。
+      // ここで方向を変えて push するため、別の axis 設定を作る
+      // → 実は IFCEXTRUDEDAREASOLID の extruded direction は3要素で任意指定可能。
+      //   xDir は (1,0,0) なので push 方向を yDir (0,1,0) に。
+      const yDir = t(IFC.IFCDIRECTION, [[0, 1, 0]]);
+      const roofSolid = t(IFC.IFCEXTRUDEDAREASOLID, [roofProf, roofPlace2d, yDir, plan.outline.depth + overhang * 2]);
       const roofRep = t(IFC.IFCSHAPEREPRESENTATION, [
         ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [roofSolid],
       ]);
       const roofShape = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [roofRep]]);
+      // 配置: Y方向に -overhang 動かして奥行に余裕
+      const roofPlace = localPlace(storeyPlace, 0, -overhang, 0);
       const roofSlab = t(IFC.IFCSLAB, [
         guid(), owner, v(IFC.IFCLABEL, 'roof'), null, null,
         roofPlace, roofShape, null, 'ROOF',

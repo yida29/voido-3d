@@ -58,7 +58,14 @@ function colorByName(name: string | undefined, typeName: string): number | undef
   if (name === 'roof') return 0x3a3a3a;
   if (name === 'entry_balcony') return 0x8b5a3c;
   if (name.startsWith('entry_step')) return 0x8b5a3c;
-  if (name === 'window') return 0xaad8ff;               // ガラス窓
+  if (name === 'window') return 0xaad8ff;
+  // 外壁を方角ごとに塗り分け (Google Maps 写真より):
+  //   南面 (玄関側): 濃いネイビー
+  //   北面: 濃いネイビー
+  //   東/西面: やや明るいグレーブルー (写真3で側面が明るく見える)
+  if (name === 'wall_S' || name === 'wall_N') return 0x3d5575;
+  if (name === 'wall_E' || name === 'wall_W') return 0x4d6580;
+  if (name === 'wall_inner') return 0xeae5d9;            // 内壁は明るいグレージュ
   if (name.endsWith('_slab') || name.includes('_slab_')) return 0x8b5a3c;
   void typeName;
   return undefined;
