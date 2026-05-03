@@ -191,40 +191,46 @@ async function main() {
       containedProducts.push(space);
     }
 
-    // ----- Slab (簡易: 階の外形を一枚) -----
-    const outlinePoly: [number, number][] = [
-      [0, 0], [plan.outline.width, 0],
-      [plan.outline.width, plan.outline.depth], [0, plan.outline.depth],
-    ];
-    const slabProfile = makePolygonProfile(t, outlinePoly);
-    const slabPlace = localPlace(storeyPlace, 0, -100, 0); // 床版を 100mm 下げて配置 (上面 = floorY)
-    const slabPlace2d = t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]);
-    const slabSolid = t(IFC.IFCEXTRUDEDAREASOLID, [slabProfile, slabPlace2d, zDir, 100]);
-    const slabRep = t(IFC.IFCSHAPEREPRESENTATION, [
-      ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [slabSolid],
-    ]);
-    const slabShape = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [slabRep]]);
-    const slab = t(IFC.IFCSLAB, [
-      guid(), owner, v(IFC.IFCLABEL, `${level.name}_slab`), null, null,
-      slabPlace, slabShape, null, 'FLOOR',
-    ]);
-    containedProducts.push(slab);
+    // ----- Slab: 各部屋 (isVoid 以外) ごとに床版を1枚ずつ作る -----
+    // これで吹抜の場所には床版が無くなり、1Fから2Fへ視線が抜ける
+    for (const room of level.rooms) {
+      if (room.isVoid) continue;
+      const roomProf = makePolygonProfile(t, room.polygon);
+      const roomPlace = localPlace(storeyPlace, 0, -100, 0); // 上面 = floorY
+      const roomPlace2d = t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]);
+      const roomSolid = t(IFC.IFCEXTRUDEDAREASOLID, [roomProf, roomPlace2d, zDir, 100]);
+      const roomRep = t(IFC.IFCSHAPEREPRESENTATION, [
+        ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [roomSolid],
+      ]);
+      const roomShape = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [roomRep]]);
+      const slab = t(IFC.IFCSLAB, [
+        guid(), owner, v(IFC.IFCLABEL, `${level.name}_slab_${room.name}`), null, null,
+        roomPlace, roomShape, null, 'FLOOR',
+      ]);
+      containedProducts.push(slab);
+    }
 
     // ----- Walls + Door 開口 -----
     // 1. 各 Space 輪郭の辺を集める
-    interface Edge { a: [number, number]; b: [number, number]; count: number }
+    //    吹抜 (isVoid) の辺はスキップせず、後で「吹抜と接する辺は壁を作らない」処理に使う
+    interface Edge { a: [number, number]; b: [number, number]; count: number; touchesVoid: boolean }
     const edges: Edge[] = [];
     const edgeIndex = new Map<string, number>();
     for (const room of level.rooms) {
-      if (room.isVoid) continue;
+      const isVoidRoom = !!room.isVoid;
       const poly = room.polygon;
       for (let i = 0; i < poly.length; i++) {
         const a = poly[i];
         const b = poly[(i + 1) % poly.length];
         const key = edgeKey(a, b);
         const idx = edgeIndex.get(key);
-        if (idx != null) edges[idx].count += 1;
-        else { edgeIndex.set(key, edges.length); edges.push({ a, b, count: 1 }); }
+        if (idx != null) {
+          edges[idx].count += 1;
+          if (isVoidRoom) edges[idx].touchesVoid = true;
+        } else {
+          edgeIndex.set(key, edges.length);
+          edges.push({ a, b, count: 1, touchesVoid: isVoidRoom });
+        }
       }
     }
 
@@ -290,11 +296,15 @@ async function main() {
     }
 
     // 3. wallSegs の各セグメントを makeWall で IFC 壁に変換
+    //    ただし「吹抜だけが接する辺」は壁を作らない (吹抜部分には壁も床もない)
     for (const ws of wallSegs) {
+      // 吹抜と (実部屋に接続せず) 接している辺は描画しない
+      // touchesVoid && count===1: 吹抜だけが接する → スキップ
+      // touchesVoid && count===2: 吹抜と実部屋が両方接する → 内壁として残す (吹抜手すり代わり)
+      if (ws.e.touchesVoid && ws.e.count === 1) continue;
       const isExternal = ws.e.count === 1;
       const thickness = isExternal ? OUT_T : WALL_T;
       for (const seg of ws.segs) {
-        // 長さが極小なら出さない
         const segLen = Math.hypot(seg.b[0] - seg.a[0], seg.b[1] - seg.a[1]);
         if (segLen < 50) continue;
         makeWall(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, seg.a, seg.b, thickness, wallHeight, isExternal)
