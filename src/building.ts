@@ -9,11 +9,23 @@ import * as WebIFC from 'web-ifc';
 //   Three.js シーンも 1 unit = 1 m に揃えるため 0.001 倍する。
 //   建物中心が原点になるよう更にオフセットする (操作系に合わせる)。
 
+export interface IFCMeshInfo {
+  mesh: THREE.Mesh;
+  type: string;            // 'IFCWALLSTANDARDCASE' など
+  expressID: number;
+  storey: '1F' | '2F' | 'unknown';
+  // ローカル座標の minY/maxY (m, root.position 適用前)。階判定に使用
+  localMinY: number;
+  localMaxY: number;
+}
+
 export interface VoidoBuilding {
   root: THREE.Group;
   walls: THREE.Mesh[];
+  meshes: IFCMeshInfo[];   // 全メッシュ (Spaces 含む)
   bbox: THREE.Box3;        // m 単位 (Three.js スケール)
   outlineMm: { width: number; depth: number };
+  rootOffsetM: { x: number; z: number }; // root.position の x, z (m)
 }
 
 const TYPE_NAME: Record<number, string> = {};
@@ -44,8 +56,41 @@ export async function loadVoidoIFC(url: string): Promise<VoidoBuilding> {
   const buf = new Uint8Array(await (await fetch(url)).arrayBuffer());
   const modelID = ifc.OpenModel(buf);
 
+  // expressID → storey 名 のマップを spatial structure から構築
+  const storeyMap = new Map<number, '1F' | '2F'>();
+  try {
+    const tree = await ifc.properties.getSpatialStructure(modelID, true);
+    walkStorey(tree, null);
+    function walkStorey(node: any, currentStorey: '1F' | '2F' | null) {
+      let next = currentStorey;
+      // type は数値か文字列、文字列は大文字混在
+      const typeRaw = node.type;
+      const typeStr = typeof typeRaw === 'number'
+        ? (TYPE_NAME[typeRaw] || '')
+        : String(typeRaw || '').toUpperCase();
+      if (typeStr === 'IFCBUILDINGSTOREY') {
+        const name = node.Name?.value ?? node.LongName?.value ?? '';
+        const elevation = node.Elevation?.value ?? 0;
+        // elevation で 1F/2F を確定 (建物名でも判定するが elevation がより安全)
+        if (elevation < 100) next = '1F';
+        else next = '2F';
+        console.log(`[STOREY] expressID=${node.expressID}, name=${name}, elevation=${elevation} → ${next}`);
+      }
+      if (typeof node.expressID === 'number' && next) {
+        storeyMap.set(node.expressID, next);
+      }
+      if (Array.isArray(node.children)) {
+        for (const c of node.children) walkStorey(c, next);
+      }
+    }
+    console.log('[STOREY MAP] size=', storeyMap.size);
+  } catch (e) {
+    console.warn('storey map failed:', e);
+  }
+
   const root = new THREE.Group();
   const walls: THREE.Mesh[] = [];
+  const meshes: IFCMeshInfo[] = [];
 
   // メッシュをすべて取得して Three.js Mesh に変換
   ifc.StreamAllMeshes(modelID, (flatMesh) => {
@@ -57,8 +102,7 @@ export async function loadVoidoIFC(url: string): Promise<VoidoBuilding> {
       if (t && TYPE_NAME[t]) typeName = TYPE_NAME[t];
     } catch { /* ignore */ }
 
-    // Spaces は描画しない (内部空間。可視化したいときは色を付け替える)
-    if (typeName === 'IFCSPACE') return;
+    const isSpace = typeName === 'IFCSPACE';
 
     const placedGeoms = flatMesh.geometries;
     for (let i = 0; i < placedGeoms.size(); i++) {
@@ -84,9 +128,10 @@ export async function loadVoidoIFC(url: string): Promise<VoidoBuilding> {
       bg.setAttribute('normal',   new THREE.BufferAttribute(normals, 3));
       bg.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1));
 
-      // 配置行列 (IFC は列優先 4×4 → THREE.Matrix4 と同じ順)
-      const mat = new THREE.Matrix4().fromArray(placed.flatTransformation as unknown as number[]);
-      bg.applyMatrix4(mat);
+      // 配置行列。web-ifc の flatTransformation は列優先 (THREE.Matrix4 と同じ)
+      // 配置行列を適用 (web-ifc は中心化された頂点を返し、translation 成分で world 配置する)
+      const arr = placed.flatTransformation as unknown as number[];
+      bg.applyMatrix4(new THREE.Matrix4().fromArray(arr));
 
       // mm → m
       bg.scale(0.001, 0.001, 0.001);
@@ -98,31 +143,39 @@ export async function loadVoidoIFC(url: string): Promise<VoidoBuilding> {
       mesh.receiveShadow = true;
       mesh.userData.ifcType = typeName;
       mesh.userData.expressID = expressID;
+
+      // Spaces はシーンに add するが非表示にして、データだけ保持 (間取り図用)
+      if (isSpace) mesh.visible = false;
       root.add(mesh);
 
       if (typeName === 'IFCWALL' || typeName === 'IFCWALLSTANDARDCASE') {
         walls.push(mesh);
       }
 
-      // GetGeometry の戻り値は手動で delete 可能だが、未公開 API なので skip
+      // 階判定: spatial structure の階層情報を優先
+      bg.computeBoundingBox();
+      const bb = bg.boundingBox!;
+      const storey: '1F' | '2F' | 'unknown' = storeyMap.get(expressID) ?? 'unknown';
+
+      meshes.push({ mesh, type: typeName, expressID, storey, localMinY: bb.min.y, localMaxY: bb.max.y });
     }
   });
 
   ifc.CloseModel(modelID);
 
-  // バウンディングボックスを取って建物中心を原点に
+  // バウンディングボックスを取って建物中心を原点に (XZ のみ。Yはそのまま)
   const bbox = new THREE.Box3().setFromObject(root);
   const center = new THREE.Vector3();
   bbox.getCenter(center);
-  // 高さ (Y) は床面 0 に揃える
   root.position.set(-center.x, -bbox.min.y, -center.z);
-  // bbox を再計算して返す
   const finalBbox = new THREE.Box3().setFromObject(root);
 
   return {
     root,
     walls,
+    meshes,
     bbox: finalBbox,
     outlineMm: { width: 10920, depth: 9100 }, // floorplan.json と同期
+    rootOffsetM: { x: root.position.x, z: root.position.z },
   };
 }

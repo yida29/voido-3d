@@ -5,52 +5,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>voido ラウンドトリップ検証</title>
     <style>
-      :root { --bg: #1a1a1d; --fg: #eee; --muted: #888; --accent: #6cf; --bad: #f66; --good: #6f6; }
+      :root { --bg: #1a1a1d; --fg: #eee; --muted: #888; --accent: #6cf; }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif; padding: 20px; }
       h1 { font-size: 18px; margin: 0 0 8px; }
       .desc { color: var(--muted); font-size: 13px; margin-bottom: 20px; line-height: 1.5; }
-      .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-      figure { margin: 0; background: #fff; border-radius: 6px; overflow: hidden; }
-      figcaption { background: #25252a; color: var(--fg); padding: 8px 12px; font-size: 12px; }
-      img, canvas { display: block; width: 100%; height: auto; }
       .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
       button { padding: 8px 16px; background: var(--accent); color: #000; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; }
       button:hover { opacity: 0.85; }
-      button:disabled { opacity: 0.4; cursor: not-allowed; }
       .stats { font-size: 12px; color: var(--muted); }
       .stats b { color: var(--fg); }
-      .legend { font-size: 11px; color: var(--muted); padding: 4px 8px; background: #25252a; border-radius: 3px; }
       a { color: var(--accent); }
+
+      .section { margin-bottom: 32px; }
+      .section h2 { font-size: 14px; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+      figure { margin: 0; background: #fff; border-radius: 6px; overflow: hidden; }
+      figcaption { background: #25252a; color: var(--fg); padding: 6px 10px; font-size: 11px; }
+      img, canvas { display: block; width: 100%; height: auto; }
+      .pair { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
     </style>
   </head>
   <body>
     <h1>ラウンドトリップ検証: PDF間取り図 ↔ IFC4 ↔ 3D 真上ビュー</h1>
     <p class="desc">
-      PDF (マイホームクラウド出力) を原本として、<code>floorplan.json</code> から IFC4 を生成 → web-ifc + Three.js で 3D 表示 → 真上から正射投影でキャプチャ。
-      左の PDF と右の 3D トップビューが一致していれば、寸法と配置が正しく保たれていることになる。
+      PDF (マイホームクラウド) を原本 → <code>floorplan.json</code> → IFC4 → web-ifc + Three.js → 各メッシュの XZ 射影 を Canvas2D に描画。
+      上が PDF、下が IFC から再生成した 1F/2F 平面図。<b>北が画面上</b>。
     </p>
 
     <div class="row">
-      <button id="capture">3D を真上からキャプチャ</button>
-      <button id="download">右の PNG をダウンロード</button>
+      <button id="download">1F/2F の PNG をダウンロード</button>
       <span class="stats" id="stats"></span>
     </div>
 
-    <div class="grid">
+    <div class="section">
+      <h2>① PDF (マイホームクラウド出力 — 原本)</h2>
       <figure>
-        <figcaption>PDF (マイホームクラウド原本) — 1F平面図 / 2F平面図</figcaption>
+        <figcaption>1F平面図 / 2F平面図 (PDF 3 ページ目)</figcaption>
         <img src="reference/pdf-floorplan.png" alt="PDF floorplan" />
-      </figure>
-      <figure>
-        <figcaption>IFC4 → Three.js 真上ビュー (1F のみ表示, OrthographicCamera)</figcaption>
-        <canvas id="topview" width="1754" height="1240"></canvas>
       </figure>
     </div>
 
-    <p class="desc" style="margin-top: 24px;">
-      <a href="./">← 3D ウォークスルーに戻る</a>
-    </p>
+    <div class="section">
+      <h2>② IFC4 → Canvas2D 真上射影 (再生成)</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>1F</figcaption>
+          <canvas id="top-1f" width="900" height="750"></canvas>
+        </figure>
+        <figure>
+          <figcaption>2F</figcaption>
+          <canvas id="top-2f" width="900" height="750"></canvas>
+        </figure>
+      </div>
+    </div>
+
+    <p class="desc"><a href="./">← 3D ウォークスルーに戻る</a></p>
 
     <script type="module" src="/src/roundtrip.ts"></script>
   </body>

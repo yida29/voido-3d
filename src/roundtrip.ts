@@ -1,99 +1,209 @@
-import * as THREE from 'three';
-import { loadVoidoIFC } from './building';
+import { loadVoidoIFC, type IFCMeshInfo, type VoidoBuilding } from './building';
 
 /**
- * IFC を Three.js に読み込み、真上から正射投影 (OrthographicCamera) でレンダリング。
- * PDF と並べて目視比較するためのページ。
- *
- * - 1F のみ可視化 (2F の床・壁が真上から見ると重なるので、Y > floor2 のメッシュは隠す)
- * - レンダ解像度は PDF と同じ 1754x1240。アスペクトを建物外形に合わせる。
- * - 縮尺・配置は floorplan.json (mm) の outline と完全一致するように合わせる。
+ * ラウンドトリップ検証ページ:
+ *   IFC を読み込み、各メッシュの頂点を XZ 平面に射影 → Canvas 2D に間取り図として描画。
+ *   1F (左) と 2F (右) を別々に描く。
+ *   PDF (マイホームクラウドの原本) と並べて目視比較する。
  */
 
-const canvas = document.getElementById('topview') as HTMLCanvasElement;
-const captureBtn = document.getElementById('capture') as HTMLButtonElement;
-const downloadBtn = document.getElementById('download') as HTMLButtonElement;
 const stats = document.getElementById('stats') as HTMLSpanElement;
+const downloadBtn = document.getElementById('download') as HTMLButtonElement;
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(1);
-renderer.setSize(canvas.width, canvas.height, false);
-renderer.setClearColor(0xffffff, 1);
-renderer.shadowMap.enabled = false;
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xffffff);
-
-const ambient = new THREE.AmbientLight(0xffffff, 1.0);
-scene.add(ambient);
-const dir = new THREE.DirectionalLight(0xffffff, 0.4);
-dir.position.set(0, 30, 0);
-scene.add(dir);
+const canvas1 = document.getElementById('top-1f') as HTMLCanvasElement;
+const canvas2 = document.getElementById('top-2f') as HTMLCanvasElement;
 
 stats.textContent = 'IFC を読み込み中...';
-
 const t0 = performance.now();
-const ifcUrl = `${import.meta.env.BASE_URL}voido.ifc`;
-const building = await loadVoidoIFC(ifcUrl);
-
-// 1F のみ表示: 2F より上のメッシュ (床高 4.04m 以上) は隠す
-// IFC の生成順番では Storey の floorY が反映されているはず
-const F2_FLOOR_Y = 4.04;
-building.root.traverse((obj) => {
-  if (!(obj as THREE.Mesh).isMesh) return;
-  const m = obj as THREE.Mesh;
-  m.geometry.computeBoundingBox();
-  const bbox = m.geometry.boundingBox!;
-  // mesh は applyMatrix4 で世界座標に焼き込み済み (building.ts 参照)
-  // ただし root.position で建物中心オフセットが入る → world で判定
-  const world = new THREE.Box3().copy(bbox).applyMatrix4(m.matrixWorld);
-  if (world.min.y >= F2_FLOOR_Y - 0.1) {
-    m.visible = false;
-  }
-});
-
-scene.add(building.root);
-
-// 建物の外形 (m単位)
-const W_M = building.outlineMm.width / 1000;
-const D_M = building.outlineMm.depth / 1000;
-// 余白 5%
-const margin = 0.05;
-const halfW = W_M * (1 + margin) / 2;
-const halfD = D_M * (1 + margin) / 2;
-
-// Canvas のアスペクト比に合わせて拡張
-const canvasAspect = canvas.width / canvas.height;
-let camHalfW = halfW;
-let camHalfD = halfD;
-if (camHalfW / camHalfD < canvasAspect) {
-  camHalfW = camHalfD * canvasAspect;
-} else {
-  camHalfD = camHalfW / canvasAspect;
-}
-
-const camera = new THREE.OrthographicCamera(
-  -camHalfW, camHalfW,
-   camHalfD, -camHalfD,
-  0.01, 100,
-);
-// 真上から見下ろす。+Z が画面上 (北が上) になるように。
-camera.position.set(0, 50, 0);
-camera.up.set(0, 0, -1); // 北 (+Z) を画面上に
-camera.lookAt(0, 0, 0);
-
-renderer.render(scene, camera);
+const building = await loadVoidoIFC(`${import.meta.env.BASE_URL}voido.ifc`);
 const dt = performance.now() - t0;
-stats.innerHTML = `<b>${building.walls.length}</b> walls, <b>${W_M.toFixed(2)}m × ${D_M.toFixed(2)}m</b>, IFC load + render: <b>${dt.toFixed(0)}ms</b>`;
 
-captureBtn.addEventListener('click', () => {
-  renderer.render(scene, camera);
-});
+drawFloor(canvas1, building, '1F');
+drawFloor(canvas2, building, '2F');
+
+const c1 = building.meshes.filter((m) => m.storey === '1F').length;
+const c2 = building.meshes.filter((m) => m.storey === '2F').length;
+stats.innerHTML = `<b>1F:</b> ${c1} parts &nbsp; <b>2F:</b> ${c2} parts &nbsp; outline ${(building.outlineMm.width/1000).toFixed(2)}m × ${(building.outlineMm.depth/1000).toFixed(2)}m &nbsp; load+draw ${dt.toFixed(0)}ms`;
+
 
 downloadBtn.addEventListener('click', () => {
-  renderer.render(scene, camera);
-  const link = document.createElement('a');
-  link.download = 'voido-topview.png';
-  link.href = canvas.toDataURL('image/png');
-  link.click();
+  download(canvas1, 'voido-1f.png');
+  download(canvas2, 'voido-2f.png');
 });
+
+function download(canvas: HTMLCanvasElement, name: string) {
+  const a = document.createElement('a');
+  a.download = name;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+
+// === Drawing ===
+
+function drawFloor(canvas: HTMLCanvasElement, b: VoidoBuilding, storey: '1F' | '2F') {
+  const ctx = canvas.getContext('2d')!;
+  const W = canvas.width;
+  const H = canvas.height;
+
+  // 白背景
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+
+  // 該当階のメッシュから世界座標 (Three.js m) の x/z 範囲を計算 (root.position 込み)
+  let xMin = Infinity, xMax = -Infinity, zMin = Infinity, zMax = -Infinity;
+  const root = b.root;
+  for (const m of b.meshes) {
+    if (m.storey !== storey) continue;
+    const pos = m.mesh.geometry.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i) + root.position.x;
+      const z = pos.getZ(i) + root.position.z;
+      if (x < xMin) xMin = x; if (x > xMax) xMax = x;
+      if (z < zMin) zMin = z; if (z > zMax) zMax = z;
+    }
+  }
+  if (!isFinite(xMin)) { xMin = -5; xMax = 5; zMin = -5; zMax = 5; }
+
+  // 建物外形 (m) → Canvas px の変換 (世界 bbox にフィット)
+  const margin = 40;
+  const wM = xMax - xMin;
+  const dM = zMax - zMin;
+  const sx = (W - 2 * margin) / wM;
+  const sz = (H - 2 * margin) / dM;
+  const scale = Math.min(sx, sz);
+  const renderedW = wM * scale;
+  const renderedD = dM * scale;
+  const offX = (W - renderedW) / 2;
+  const offY = (H - renderedD) / 2;
+
+  // 座標変換: 世界 m → Canvas px
+  // PDF は北が画面上。
+  // 私の build-ifc.ts で IFC原座標は (+X東, +Y北, +Z上)。
+  // web-ifc の Y up 変換後は Three (+x東, +y上, +z=元IFC -y=南)。
+  // 北を画面上に: Canvas y は 「z が大きい (=南)」ほど大きい (画面下) → そのままでいい。
+  // ただし z 範囲が負からの場合は zMin を引いて 0 起点にする。
+  const toPx = (xM: number, zM: number): [number, number] => [
+    offX + (xM - xMin) * scale,
+    offY + (zM - zMin) * scale,
+  ];
+
+
+  // 1) 部屋 (Spaces) を薄いグレーで塗る
+  ctx.fillStyle = '#f3f0ea';
+  for (const m of b.meshes.filter((m) => m.storey === storey && m.type === 'IFCSPACE')) {
+    drawTopFootprint(ctx, m, toPx, 'fill');
+  }
+
+  // 2) 床スラブの輪郭を細い線で
+  ctx.strokeStyle = '#bbbbbb';
+  ctx.lineWidth = 1;
+  for (const m of b.meshes.filter((m) => m.storey === storey && m.type === 'IFCSLAB')) {
+    drawTopFootprint(ctx, m, toPx, 'stroke');
+  }
+
+  // 3) 壁を黒で塗る (上から見た輪郭)
+  ctx.fillStyle = '#222222';
+  for (const m of b.meshes.filter((m) => m.storey === storey && (m.type === 'IFCWALL' || m.type === 'IFCWALLSTANDARDCASE'))) {
+    drawTopFootprint(ctx, m, toPx, 'fill');
+  }
+
+  // 4) ドアを赤い四角で
+  ctx.fillStyle = '#d23';
+  ctx.strokeStyle = '#d23';
+  for (const m of b.meshes.filter((m) => m.storey === storey && m.type === 'IFCDOOR')) {
+    drawTopFootprint(ctx, m, toPx, 'fill');
+  }
+
+  // 5) 外形の枠 (デバッグ用)
+  ctx.strokeStyle = '#888';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(offX, offY, renderedW, renderedD);
+
+  // 方位記号
+  drawCompass(ctx, W - 50, 30);
+
+  // タイトル
+  ctx.fillStyle = '#222';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`${storey}平面図`, 16, 28);
+  ctx.font = '11px sans-serif';
+  ctx.fillStyle = '#666';
+  ctx.fillText(`間口 ${wM.toFixed(2)}m × 奥行 ${dM.toFixed(2)}m`, 16, 44);
+}
+
+function drawCompass(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = '#444';
+  ctx.fillStyle = '#444';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(0, 16); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(12, 0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(-4, -10); ctx.lineTo(4, -10); ctx.closePath(); ctx.fill();
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('N', 0, -20);
+  ctx.restore();
+}
+
+/**
+ * メッシュの全頂点を XZ 平面に射影し、その convex hull を描く。
+ * 壁・床・部屋・ドアはみな矩形ベースの押し出しなので convex hull で十分。
+ */
+function drawTopFootprint(
+  ctx: CanvasRenderingContext2D,
+  m: IFCMeshInfo,
+  toPx: (xMm: number, zMm: number) => [number, number],
+  mode: 'fill' | 'stroke',
+) {
+  const pos = m.mesh.geometry.attributes.position as THREE.BufferAttribute;
+  if (!pos) return;
+
+  // 頂点を XZ 平面に射影 (Three.js 世界 m)
+  const root = m.mesh.parent as THREE.Object3D;
+  const ox = root.position.x;
+  const oz = root.position.z;
+  const points2d: [number, number][] = [];
+  for (let i = 0; i < pos.count; i++) {
+    points2d.push([pos.getX(i) + ox, pos.getZ(i) + oz]);
+  }
+  const hull = convexHull(points2d);
+  if (hull.length < 3) return;
+
+  ctx.beginPath();
+  for (let i = 0; i < hull.length; i++) {
+    const [px, py] = toPx(hull[i][0], hull[i][1]);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  if (mode === 'fill') ctx.fill();
+  else ctx.stroke();
+}
+
+// Andrew's monotone chain — 2D convex hull. O(n log n)
+function convexHull(pts: [number, number][]): [number, number][] {
+  const points = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const n = points.length;
+  if (n < 2) return points;
+  const lower: [number, number][] = [];
+  for (const p of points) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: [number, number][] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const p = points[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  upper.pop(); lower.pop();
+  return lower.concat(upper);
+}
+function cross(o: [number, number], a: [number, number], b: [number, number]): number {
+  return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+}
+
+// import for type
+import * as THREE from 'three';

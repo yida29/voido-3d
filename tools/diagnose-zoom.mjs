@@ -1,0 +1,14 @@
+import { chromium } from 'playwright';
+const URL = process.argv[2] || 'http://localhost:5173/roundtrip.html';
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 2200, height: 1100 } });
+await page.goto(URL, { waitUntil: 'networkidle' });
+await page.waitForTimeout(2000);
+const c1 = await page.locator('#top-1f').screenshot();
+const c2 = await page.locator('#top-2f').screenshot();
+import fs from 'node:fs';
+fs.mkdirSync('tools/out', { recursive: true });
+fs.writeFileSync('tools/out/1f.png', c1);
+fs.writeFileSync('tools/out/2f.png', c2);
+console.log('saved 1f.png, 2f.png');
+await browser.close();
