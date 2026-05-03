@@ -3,63 +3,73 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>voido ラウンドトリップ検証</title>
+    <title>voido 検証ダッシュボード</title>
     <style>
-      :root { --bg: #1a1a1d; --fg: #eee; --muted: #888; --accent: #6cf; }
+      :root { --bg: #1a1a1d; --fg: #eee; --muted: #888; --accent: #6cf; --good: #6f6; --bad: #f66; --warn: #ffa }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif; padding: 20px; }
       h1 { font-size: 18px; margin: 0 0 8px; }
+      h2 { font-size: 14px; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
       .desc { color: var(--muted); font-size: 13px; margin-bottom: 20px; line-height: 1.5; }
       .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
       button { padding: 8px 16px; background: var(--accent); color: #000; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; }
-      button:hover { opacity: 0.85; }
       .stats { font-size: 12px; color: var(--muted); }
       .stats b { color: var(--fg); }
       a { color: var(--accent); }
-
       .section { margin-bottom: 32px; }
-      .section h2 { font-size: 14px; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+
       figure { margin: 0; background: #fff; border-radius: 6px; overflow: hidden; }
-      figcaption { background: #25252a; color: var(--fg); padding: 6px 10px; font-size: 11px; }
+      figcaption { background: #25252a; color: var(--fg); padding: 6px 10px; font-size: 11px; display: flex; justify-content: space-between; }
       img, canvas { display: block; width: 100%; height: auto; }
       .pair { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+
+      /* 検証チェックリスト */
+      .checks { background: #25252a; border-radius: 6px; padding: 12px 16px; }
+      .checks li { list-style: none; padding: 4px 0; font-size: 13px; font-family: monospace; }
+      .checks .ok::before  { content: '✓ '; color: var(--good); font-weight: bold; }
+      .checks .bad::before { content: '✗ '; color: var(--bad); font-weight: bold; }
+      .checks .warn::before { content: '⚠ '; color: var(--warn); }
+      .checks .bad .detail { color: var(--bad); margin-left: 12px; opacity: 0.85 }
+
+      /* iframe ギャラリー */
+      .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+      .gallery figure iframe { width: 100%; height: 280px; border: 0; display: block; }
+      .gallery figure figcaption { font-size: 10px; }
     </style>
   </head>
   <body>
-    <h1>ラウンドトリップ検証: PDF間取り図 ↔ IFC4 ↔ 3D 真上ビュー</h1>
+    <h1>voido 検証ダッシュボード</h1>
     <p class="desc">
-      PDF (マイホームクラウド) を原本 → <code>floorplan.json</code> → IFC4 → web-ifc + Three.js → 各メッシュの XZ 射影 を Canvas2D に描画。
-      上が PDF、下が IFC から再生成した 1F/2F 平面図。<b>北が画面上</b>。
+      PDF原本 → <code>floorplan.json</code> → IFC4 → 3D。各層で正しさをチェックする。
+      <a href="./">← 3D ウォークスルーに戻る</a>
     </p>
 
     <div class="row">
-      <button id="download">1F/2F の PNG をダウンロード</button>
       <span class="stats" id="stats"></span>
+      <button id="download">1F/2F PNG ダウンロード</button>
     </div>
 
     <div class="section">
-      <h2>① PDF (マイホームクラウド出力 — 原本)</h2>
+      <h2>① 構造完全性チェック (Structural Integrity)</h2>
+      <ul class="checks" id="integrity"></ul>
+    </div>
+
+    <div class="section">
+      <h2>② 多角度プレビュー (Visual Snapshots) — 各方向から実際の3Dを撮影</h2>
+      <div class="gallery" id="gallery"></div>
+    </div>
+
+    <div class="section">
+      <h2>③ PDF 原本と平面図ラウンドトリップ</h2>
       <figure>
-        <figcaption>1F平面図 / 2F平面図 (PDF 3 ページ目)</figcaption>
+        <figcaption>PDF (マイホームクラウド出力)</figcaption>
         <img src="reference/pdf-floorplan.png" alt="PDF floorplan" />
       </figure>
-    </div>
-
-    <div class="section">
-      <h2>② IFC4 → Canvas2D 真上射影 (再生成)</h2>
-      <div class="pair">
-        <figure>
-          <figcaption>1F</figcaption>
-          <canvas id="top-1f" width="900" height="750"></canvas>
-        </figure>
-        <figure>
-          <figcaption>2F</figcaption>
-          <canvas id="top-2f" width="900" height="750"></canvas>
-        </figure>
+      <div class="pair" style="margin-top: 12px;">
+        <figure><figcaption>IFC → Canvas 1F</figcaption><canvas id="top-1f" width="900" height="750"></canvas></figure>
+        <figure><figcaption>IFC → Canvas 2F</figcaption><canvas id="top-2f" width="900" height="750"></canvas></figure>
       </div>
     </div>
-
-    <p class="desc"><a href="./">← 3D ウォークスルーに戻る</a></p>
 
     <script type="module" src="/src/roundtrip.ts"></script>
   </body>

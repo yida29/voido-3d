@@ -9,6 +9,8 @@ import { loadVoidoIFC, type IFCMeshInfo, type VoidoBuilding } from './building';
 
 const stats = document.getElementById('stats') as HTMLSpanElement;
 const downloadBtn = document.getElementById('download') as HTMLButtonElement;
+const integrityList = document.getElementById('integrity') as HTMLUListElement;
+const galleryEl = document.getElementById('gallery') as HTMLDivElement;
 
 const canvas1 = document.getElementById('top-1f') as HTMLCanvasElement;
 const canvas2 = document.getElementById('top-2f') as HTMLCanvasElement;
@@ -31,24 +33,33 @@ interface YRange { min: number; max: number; tolerance?: number }
 // 1F壁は 2F床下面 (3940mm) まで延ばして階間の隙間を消している
 // 1F SLAB は屋外階段 (Y=-0.56 〜 0) も含むので min を地面 -0.6 まで許容
 // (IfcDoor は now 描画しないので期待値からも除外)
-const YEXPECT: Record<'1F' | '2F', Partial<Record<string, YRange>>> = {
+// 階別、タイプ別に許容される複数の Y範囲。いずれかに収まれば OK。
+// 例: 2F SLAB は通常床 [4.04, 4.20] か屋根 [6.40, 6.70]
+const YEXPECT: Record<'1F' | '2F', Partial<Record<string, YRange[]>>> = {
   '1F': {
-    IFCSLAB:             { min: -0.6, max: 0.20 },
-    IFCWALLSTANDARDCASE: { min: 0,    max: 3.95 },
+    IFCSLAB:             [{ min: -0.6, max: 0.20 }], // 床/階段含む
+    IFCWALLSTANDARDCASE: [{ min: 0, max: 3.95 }],
   },
   '2F': {
-    IFCSLAB:             { min: 4.04, max: 4.20 },
-    IFCWALLSTANDARDCASE: { min: 4.04, max: 6.50 },
+    IFCSLAB:             [
+      { min: 4.04, max: 4.20 }, // 2F 床
+      { min: 6.40, max: 6.70 }, // 屋根
+    ],
+    IFCWALLSTANDARDCASE: [{ min: 4.04, max: 6.50 }],
   },
 };
 const violations: string[] = [];
 for (const m of building.meshes) {
   if (m.storey === 'unknown') continue;
-  const expect = YEXPECT[m.storey][m.type];
-  if (!expect) continue;
-  const tol = expect.tolerance ?? 0.05;
-  if (m.localMinY < expect.min - tol || m.localMaxY > expect.max + tol) {
-    violations.push(`${m.storey} ${m.type} y=[${m.localMinY.toFixed(2)}, ${m.localMaxY.toFixed(2)}] expected within [${expect.min}, ${expect.max}]`);
+  const ranges = YEXPECT[m.storey][m.type];
+  if (!ranges || ranges.length === 0) continue;
+  const fits = ranges.some((r) => {
+    const tol = r.tolerance ?? 0.05;
+    return m.localMinY >= r.min - tol && m.localMaxY <= r.max + tol;
+  });
+  if (!fits) {
+    const desc = ranges.map(r => `[${r.min}, ${r.max}]`).join(' or ');
+    violations.push(`${m.storey} ${m.type} y=[${m.localMinY.toFixed(2)}, ${m.localMaxY.toFixed(2)}] not within ${desc}`);
   }
 }
 const yCheck = violations.length === 0
@@ -59,6 +70,12 @@ stats.innerHTML = `<b>1F:</b> ${c1} parts &nbsp; <b>2F:</b> ${c2} parts &nbsp; o
 if (violations.length > 0) {
   console.error('[Y-CHECK] violations:\n' + violations.join('\n'));
 }
+
+// === ① 構造完全性チェック (Structural Integrity) ===
+runIntegrityChecks(building, violations);
+
+// === ② 多角度プレビュー ===
+buildGallery();
 
 
 downloadBtn.addEventListener('click', () => {
@@ -242,3 +259,154 @@ function cross(o: [number, number], a: [number, number], b: [number, number]): n
 
 // import for type
 import * as THREE from 'three';
+
+// === Integrity check helpers ===
+interface CheckResult { name: string; ok: boolean; detail?: string }
+function runIntegrityChecks(b: VoidoBuilding, yViolations: string[]) {
+  const checks: CheckResult[] = [];
+  const meshes = b.meshes;
+  const wallsByStorey = (st: '1F' | '2F') => meshes.filter(m => m.storey === st && (m.type === 'IFCWALL' || m.type === 'IFCWALLSTANDARDCASE'));
+  const slabsByStorey = (st: '1F' | '2F') => meshes.filter(m => m.storey === st && m.type === 'IFCSLAB');
+
+  // 必須エンティティ存在チェック
+  checks.push({ name: '1F に床スラブがある', ok: slabsByStorey('1F').length > 0, detail: `${slabsByStorey('1F').length}枚` });
+  checks.push({ name: '2F に床スラブがある', ok: slabsByStorey('2F').filter(m => m.localMinY < 5).length > 0, detail: `${slabsByStorey('2F').filter(m => m.localMinY < 5).length}枚` });
+  checks.push({ name: '1F に壁が十分ある (≥4)', ok: wallsByStorey('1F').length >= 4, detail: `${wallsByStorey('1F').length}本` });
+  checks.push({ name: '2F に壁が十分ある (≥4)', ok: wallsByStorey('2F').length >= 4, detail: `${wallsByStorey('2F').length}本` });
+  // 部屋数は壁の数から推定 (Space 自体はジオメトリ生成されないため)
+  // 各階に最低限の壁本数があるか
+  const wallCount1F = wallsByStorey('1F').length;
+  const wallCount2F = wallsByStorey('2F').length;
+  checks.push({
+    name: '壁本数が十分 (1F≥10, 2F≥6)',
+    ok: wallCount1F >= 10 && wallCount2F >= 6,
+    detail: `1F=${wallCount1F}, 2F=${wallCount2F}`,
+  });
+
+  // 屋根 (= 最上階に上面を覆うスラブ) があるか
+  // ここでは「2F の SLAB のうち、Y bbox が壁の上端 (≒6.46m) 以上にあるもの」を屋根とみなす
+  const roofCandidates = slabsByStorey('2F').filter(m => m.localMinY >= 6.0);
+  checks.push({
+    name: '屋根がある (2F壁上端より上のスラブ)',
+    ok: roofCandidates.length > 0,
+    detail: `候補=${roofCandidates.length}枚`,
+  });
+
+  // 屋根の XZ 投影面積 ≧ 建物外形面積 (= 雨を凌げる)
+  if (roofCandidates.length > 0) {
+    const ground = bbox2D(roofCandidates);
+    const expectedArea = (b.outlineMm.width / 1000) * (b.outlineMm.depth / 1000);
+    const roofArea = ground.area;
+    const ratio = roofArea / expectedArea;
+    checks.push({
+      name: `屋根面積 ≧ 建物外形 (実 ${roofArea.toFixed(1)}㎡ / 想定 ${expectedArea.toFixed(1)}㎡)`,
+      ok: ratio >= 0.95,
+      detail: `比率 ${(ratio * 100).toFixed(0)}%`,
+    });
+  }
+
+  // 1F壁の上端 ≦ 2F床の下端 (隙間なし、ただし床版厚 100mm は許容)
+  const wallTop1F = Math.max(0, ...wallsByStorey('1F').map(m => m.localMaxY));
+  // 2F の SLAB のうち、2F床高の近く (屋根を除く)
+  const slabs2FFloor = slabsByStorey('2F').filter(m => m.localMinY < 5);
+  const slabBottom2F = slabs2FFloor.length > 0 ? Math.min(...slabs2FFloor.map(m => m.localMinY)) : Infinity;
+  const gap = slabBottom2F - wallTop1F;
+  checks.push({
+    name: '1F壁と2F床に隙間なし (床版厚 100mm 許容)',
+    ok: gap >= -0.05 && gap <= 0.15,
+    detail: `gap=${(gap * 1000).toFixed(0)}mm`,
+  });
+
+  // 2F壁の上端 ≦ 屋根の下端
+  if (roofCandidates.length > 0) {
+    const wallTop2F = Math.max(0, ...wallsByStorey('2F').map(m => m.localMaxY));
+    const roofBottom = Math.min(Infinity, ...roofCandidates.map(m => m.localMinY));
+    const gap2 = roofBottom - wallTop2F;
+    checks.push({
+      name: '2F壁と屋根の間に隙間なし',
+      ok: Math.abs(gap2) < 0.15,
+      detail: `gap=${(gap2 * 1000).toFixed(0)}mm`,
+    });
+  }
+
+  // 4方向すべてに外壁があるか (簡易: 建物外形の各辺に近い壁メッシュがあるか)
+  const wbb = new THREE.Box3();
+  wallsByStorey('1F').forEach(m => wbb.expandByObject(m.mesh));
+  const margin = 0.5;
+  const sides = { N: false, S: false, E: false, W: false };
+  for (const m of wallsByStorey('1F')) {
+    const bb = new THREE.Box3().setFromObject(m.mesh);
+    if (bb.min.z <= wbb.min.z + margin) sides.N = true;
+    if (bb.max.z >= wbb.max.z - margin) sides.S = true;
+    if (bb.min.x <= wbb.min.x + margin) sides.W = true;
+    if (bb.max.x >= wbb.max.x - margin) sides.E = true;
+  }
+  for (const [k, ok] of Object.entries(sides)) {
+    checks.push({ name: `1F外壁: ${k} 面に壁がある`, ok });
+  }
+
+  // Y軸 expectation
+  checks.push({
+    name: `Y軸範囲チェック (各タイプの想定高さ)`,
+    ok: yViolations.length === 0,
+    detail: yViolations.length > 0 ? yViolations.join(' / ') : 'all within bounds',
+  });
+
+  // レンダリング
+  integrityList.innerHTML = '';
+  let allOk = true;
+  for (const c of checks) {
+    const li = document.createElement('li');
+    li.className = c.ok ? 'ok' : 'bad';
+    li.innerHTML = `${c.name}` + (c.detail ? ` <span class="detail">— ${c.detail}</span>` : '');
+    integrityList.appendChild(li);
+    if (!c.ok) allOk = false;
+  }
+  const summary = document.createElement('li');
+  summary.className = allOk ? 'ok' : 'bad';
+  summary.style.borderTop = '1px solid #444';
+  summary.style.marginTop = '8px';
+  summary.style.paddingTop = '8px';
+  summary.innerHTML = `<b>結果: ${checks.filter(c => c.ok).length} / ${checks.length} pass</b>`;
+  integrityList.appendChild(summary);
+}
+
+function bbox2D(meshes: IFCMeshInfo[]): { area: number } {
+  let xMin = Infinity, xMax = -Infinity, zMin = Infinity, zMax = -Infinity;
+  for (const m of meshes) {
+    const bb = new THREE.Box3().setFromObject(m.mesh);
+    if (bb.min.x < xMin) xMin = bb.min.x;
+    if (bb.max.x > xMax) xMax = bb.max.x;
+    if (bb.min.z < zMin) zMin = bb.min.z;
+    if (bb.max.z > zMax) zMax = bb.max.z;
+  }
+  return { area: (xMax - xMin) * (zMax - zMin) };
+}
+
+// === Gallery: 多角度から index.html を iframe で開いて見る ===
+function buildGallery() {
+  const base = import.meta.env.BASE_URL;
+  const VIEWS = [
+    { name: '上空 南側',     pos: [0, 25, 18],  rot: [-0.9, 0] },
+    { name: '上空 真上',     pos: [0, 30, 0.1], rot: [-Math.PI/2 + 0.05, 0] },
+    { name: '上空 東側',     pos: [18, 25, 0],  rot: [-0.9, -Math.PI/2] },
+    { name: '地表 南面',     pos: [0, 1.6, 12], rot: [0, 0] },
+    { name: '地表 北面',     pos: [0, 1.6, -12], rot: [0, Math.PI] },
+    { name: '地表 東面',     pos: [12, 1.6, 0], rot: [0, -Math.PI/2] },
+    { name: '玄関アプローチ', pos: [4, 1.6, 8], rot: [-0.1, -0.3] },
+    { name: '1F 室内中央',   pos: [0, 1.6, 0], rot: [0, 0] },
+    { name: '2F 西大洋室',   pos: [-2, 5.6, 2], rot: [0, 0] },
+  ];
+  galleryEl.innerHTML = '';
+  for (const v of VIEWS) {
+    const fig = document.createElement('figure');
+    const cap = document.createElement('figcaption');
+    cap.innerHTML = `<span>${v.name}</span><span>(${v.pos.map(n => n.toFixed(1)).join(', ')})</span>`;
+    const iframe = document.createElement('iframe');
+    iframe.src = `${base}?posX=${v.pos[0]}&posY=${v.pos[1]}&posZ=${v.pos[2]}&rotX=${v.rot[0]}&rotY=${v.rot[1]}&hideHud=1`;
+    iframe.loading = 'lazy';
+    fig.appendChild(cap);
+    fig.appendChild(iframe);
+    galleryEl.appendChild(fig);
+  }
+}

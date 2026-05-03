@@ -6,6 +6,12 @@ import { Collider } from './collision';
 
 const canvas = document.getElementById('app') as HTMLCanvasElement;
 
+// hideHud=1 で HUD を隠す (gallery iframe 用)
+if (new URLSearchParams(location.search).get('hideHud') === '1') {
+  const hud = document.getElementById('hud'); if (hud) hud.style.display = 'none';
+  const ch = document.getElementById('crosshair'); if (ch) ch.style.display = 'none';
+}
+
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);

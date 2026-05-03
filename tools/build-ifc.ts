@@ -369,6 +369,33 @@ async function main() {
       }
     }
 
+    // 6. 最上階なら屋根 (大屋根スラブ) を追加して雨風を凌げるようにする
+    if (!nextLevel) {
+      const ROOF_T = 200; // 屋根厚 mm
+      const overhang = 300; // 軒の出 mm
+      const roofPoly: [number, number][] = [
+        [-overhang, -overhang],
+        [plan.outline.width + overhang, -overhang],
+        [plan.outline.width + overhang, plan.outline.depth + overhang],
+        [-overhang, plan.outline.depth + overhang],
+      ];
+      const roofProf = makePolygonProfile(t, roofPoly);
+      // 屋根下面 = 当階の壁上端 = ceilingHeight (storey elevation は building.ts ローダー側で加算される)
+      const roofBottomY = level.ceilingHeight;
+      const roofPlace = localPlace(storeyPlace, 0, 0, roofBottomY);
+      const roofPlace2d = t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]);
+      const roofSolid = t(IFC.IFCEXTRUDEDAREASOLID, [roofProf, roofPlace2d, zDir, ROOF_T]);
+      const roofRep = t(IFC.IFCSHAPEREPRESENTATION, [
+        ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [roofSolid],
+      ]);
+      const roofShape = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [roofRep]]);
+      const roofSlab = t(IFC.IFCSLAB, [
+        guid(), owner, v(IFC.IFCLABEL, 'roof'), null, null,
+        roofPlace, roofShape, null, 'ROOF',
+      ]);
+      containedProducts.push(roofSlab);
+    }
+
     // 階 → コンテンツ
     if (containedProducts.length > 0) {
       t(IFC.IFCRELCONTAINEDINSPATIALSTRUCTURE, [
