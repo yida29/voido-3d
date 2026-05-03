@@ -304,8 +304,20 @@ async function main() {
     //    内壁は階ごとに通常の高さ
     const isFirstStorey = levelIdx === 0;
     const FOUNDATION_TOP = -100; // mm
+    const W = plan.outline.width;
+    const D = plan.outline.depth;
+    // 「辺の両端が外形の同じ辺に乗っている」かどうかの判定
+    const isOnOuterEdge = (a: [number, number], b: [number, number]): boolean => {
+      if (a[0] === 0 && b[0] === 0) return true;       // 西辺
+      if (a[0] === W && b[0] === W) return true;       // 東辺
+      if (a[1] === 0 && b[1] === 0) return true;       // 南辺
+      if (a[1] === D && b[1] === D) return true;       // 北辺
+      return false;
+    };
     for (const ws of wallSegs) {
-      if (ws.e.touchesVoid && ws.e.count === 1) continue;
+      // 吹抜だけが接する辺 → 通常スキップ
+      // ただし「外形辺と一致する辺」は外壁として必要なので残す
+      if (ws.e.touchesVoid && ws.e.count === 1 && !isOnOuterEdge(ws.e.a, ws.e.b)) continue;
       const isExternal = ws.e.count === 1;
       const thickness = isExternal ? OUT_T : WALL_T;
       // 外壁だけ Y方向を拡張 (床版・基礎・上階壁との境目を覆う)

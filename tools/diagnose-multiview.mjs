@@ -8,23 +8,24 @@ const OUT = 'tools/out/views';
 fs.mkdirSync(OUT, { recursive: true });
 
 // 視点リスト: [name, posX, posY, posZ, rotX (pitch), rotY (yaw)]
-// rotY: 0=南向き(+Z), -π/2=東向き(+X), π=北向き(-Z), π/2=西向き(-X)
+// PointerLockControls の yaw object は Three.js Object3D。デフォルトforward = -Z。
+// Y軸回転は右手系 (上から見て反時計回り):
+//   rotY = 0     → -Z (北) を見る
+//   rotY = π/2   → -X (西) を見る
+//   rotY = π     → +Z (南) を見る
+//   rotY = -π/2  → +X (東) を見る
+// 建物の外に立って建物中心を見る:
 const VIEWS = [
-  // 上空からの俯瞰 (no-clip 必要)
-  { name: '01_overview_south',  pos: [0, 25, 18],  rot: [-0.9, 0] },
-  { name: '02_overview_east',   pos: [18, 25, 0],  rot: [-0.9, -Math.PI / 2] },
-  { name: '03_overview_top',    pos: [0, 30, 0.1], rot: [-Math.PI / 2 + 0.05, 0] },
-  // 地表 (人の目線) から各面
-  { name: '04_ground_south',    pos: [0, 1.6, 12], rot: [0, 0] },
-  { name: '05_ground_east',     pos: [12, 1.6, 0], rot: [0, -Math.PI / 2] },
-  { name: '06_ground_north',    pos: [0, 1.6, -12], rot: [0, Math.PI] },
-  { name: '07_ground_west',     pos: [-12, 1.6, 0], rot: [0, Math.PI / 2] },
-  // 玄関アプローチ前 (建物南東付近)
-  { name: '08_entry_approach',  pos: [4, 1.6, 8], rot: [-0.1, -0.3] },
-  // 1F 室内中央
-  { name: '09_1f_inside_center', pos: [0, 1.6, 0], rot: [0, 0] },
-  // 2F 室内 (西大洋室)
-  { name: '10_2f_west_room',    pos: [-2, 5.6, 2], rot: [0, 0] },
+  { name: '01_overview_south',  pos: [0, 25, 18],   rot: [-0.9, 0] },              // 南上空 → 北
+  { name: '02_overview_east',   pos: [18, 25, 0],   rot: [-0.9, Math.PI / 2] },    // 東上空 → 西
+  { name: '03_overview_top',    pos: [0, 30, 0.1],  rot: [-Math.PI / 2 + 0.05, 0] },
+  { name: '04_ground_south',    pos: [0, 1.6, 12],  rot: [0, 0] },                 // 南→北
+  { name: '05_ground_east',     pos: [12, 1.6, 0],  rot: [0, Math.PI / 2] },       // 東→西
+  { name: '06_ground_north',    pos: [0, 1.6, -12], rot: [0, Math.PI] },           // 北→南
+  { name: '07_ground_west',     pos: [-12, 1.6, 0], rot: [0, -Math.PI / 2] },      // 西→東
+  { name: '08_entry_approach',  pos: [4, 1.6, 8],   rot: [-0.1, -0.3] },           // 南東→北西
+  { name: '09_1f_inside_center', pos: [0, 1.6, 0],  rot: [0, 0] },
+  { name: '10_2f_west_room',    pos: [-2, 5.6, 2],  rot: [0, 0] },
 ];
 
 const browser = await chromium.launch();
