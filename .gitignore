@@ -7,3 +7,6 @@ dist
 # WASM はビルド時に node_modules からコピーされるので git 管理しない
 public/web-ifc.wasm
 public/web-ifc-mt.wasm
+
+# 診断スクリプトの出力
+tools/out/
