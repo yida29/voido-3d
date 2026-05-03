@@ -52,8 +52,15 @@ export function createControls(
 
   // 現在階を Y 値から推測
   let currentFloor: '1F' | '2F' = startY > (FLOOR_Y_1F + FLOOR_Y_2F) / 2 + EYE_HEIGHT * 0.5 ? '2F' : '1F';
-  let noClip = false;
-  let lockY = true; // 通常は階の床に Y を固定。no-clip 時は自由飛行
+  // デフォルトで no-clip ON (壁すり抜け+自由飛行)
+  // Gキーで通常モード (壁衝突あり) に切替可能
+  let noClip = true;
+  let lockY = !noClip;
+  // 初期 HUD 表示
+  queueMicrotask(() => {
+    const hud = document.getElementById('mode-status');
+    if (hud) hud.textContent = noClip ? '🛸 no-clip ON (Gキーで切替)' : '';
+  });
 
   // 自動でロックを取る (キャンバス内のクリックで)
   const canvas = document.getElementById('app') as HTMLElement;
