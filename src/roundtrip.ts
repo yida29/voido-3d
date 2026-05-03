@@ -23,7 +23,41 @@ drawFloor(canvas2, building, '2F');
 
 const c1 = building.meshes.filter((m) => m.storey === '1F').length;
 const c2 = building.meshes.filter((m) => m.storey === '2F').length;
-stats.innerHTML = `<b>1F:</b> ${c1} parts &nbsp; <b>2F:</b> ${c2} parts &nbsp; outline ${(building.outlineMm.width/1000).toFixed(2)}m × ${(building.outlineMm.depth/1000).toFixed(2)}m &nbsp; load+draw ${dt.toFixed(0)}ms`;
+
+// === Y 軸検証 ===
+// XZ 投影だけでは「壁が地面に重なって立ってる」のような Y 異常を見逃す。
+// 階別に各メッシュの Y 範囲が期待値内に収まっているか検査する。
+interface YRange { min: number; max: number; tolerance?: number }
+const YEXPECT: Record<'1F' | '2F', Partial<Record<string, YRange>>> = {
+  '1F': {
+    IFCSLAB:             { min: 0,    max: 0.20 },
+    IFCWALLSTANDARDCASE: { min: 0,    max: 2.95 },
+    IFCDOOR:             { min: 0,    max: 2.10 },
+  },
+  '2F': {
+    IFCSLAB:             { min: 4.04, max: 4.20 },
+    IFCWALLSTANDARDCASE: { min: 4.04, max: 6.50 },
+    IFCDOOR:             { min: 4.04, max: 6.10 },
+  },
+};
+const violations: string[] = [];
+for (const m of building.meshes) {
+  if (m.storey === 'unknown') continue;
+  const expect = YEXPECT[m.storey][m.type];
+  if (!expect) continue;
+  const tol = expect.tolerance ?? 0.05;
+  if (m.localMinY < expect.min - tol || m.localMaxY > expect.max + tol) {
+    violations.push(`${m.storey} ${m.type} y=[${m.localMinY.toFixed(2)}, ${m.localMaxY.toFixed(2)}] expected within [${expect.min}, ${expect.max}]`);
+  }
+}
+const yCheck = violations.length === 0
+  ? `<span style="color:#6f6">Y✓</span>`
+  : `<span style="color:#f66">Y✗ ${violations.length}件</span>`;
+
+stats.innerHTML = `<b>1F:</b> ${c1} parts &nbsp; <b>2F:</b> ${c2} parts &nbsp; outline ${(building.outlineMm.width/1000).toFixed(2)}m × ${(building.outlineMm.depth/1000).toFixed(2)}m &nbsp; ${yCheck} &nbsp; load+draw ${dt.toFixed(0)}ms`;
+if (violations.length > 0) {
+  console.error('[Y-CHECK] violations:\n' + violations.join('\n'));
+}
 
 
 downloadBtn.addEventListener('click', () => {

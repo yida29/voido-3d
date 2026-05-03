@@ -1,0 +1,12 @@
+import { chromium } from 'playwright';
+const URL = process.argv[2] || 'http://localhost:5173/roundtrip.html';
+const browser = await chromium.launch();
+const page = await browser.newPage();
+const errs = [];
+page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
+await page.goto(URL, { waitUntil: 'networkidle' });
+await page.waitForTimeout(2000);
+const stats = await page.locator('#stats').innerHTML();
+console.log('stats:', stats);
+console.log('errors:', errs.length, errs);
+await browser.close();
