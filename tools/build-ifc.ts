@@ -236,13 +236,17 @@ async function main() {
       }
     }
 
-    // 2. 各ドアについて「乗っている辺」を見つけ、その辺を分割記録
-    // 結果: 各辺 → [そのまま] or [ドア両側の 2 セグメント]
+    // 2. 開口 (ドア・窓) を解析
+    //    - ドア: 床から開口 → 該当辺を左右に分割、上に垂れ壁なし(=開けっぱなし)
+    //    - 窓: sillY..sillY+height の開口 → 横方向は左右に分割、縦方向は腰壁・垂れ壁
     interface Segment { a: [number, number]; b: [number, number] }
     interface SlidingPanel { a: [number, number]; b: [number, number]; thickness: number; height: number }
-    const wallSegs: { e: Edge; segs: Segment[]; lintels: { center: [number, number]; w: number; bottomY: number; topY: number }[] }[] =
-      edges.map((e) => ({ e, segs: [{ a: e.a, b: e.b }], lintels: [] }));
+    // 窓開口: ある辺の中で「水平範囲 [tStart, tEnd] (parameterized 0..1) かつ 縦範囲 [sillY, sillY+height]」が窓
+    interface WindowOpening { tStart: number; tEnd: number; sillY: number; height: number }
+    const wallSegs: { e: Edge; segs: Segment[]; windows: WindowOpening[] }[] =
+      edges.map((e) => ({ e, segs: [{ a: e.a, b: e.b }], windows: [] }));
     const slidingPanels: SlidingPanel[] = [];
+    const glassPanels: { a: [number, number]; b: [number, number]; sillY: number; height: number }[] = [];
 
     for (const door of level.doors) {
       const cx = door.centerX ?? null;
@@ -297,6 +301,60 @@ async function main() {
       }
     }
 
+    // 2.5 窓を解析: 該当辺を見つけて wallSegs.windows に登録 + ガラス板を作る
+    const W = plan.outline.width;
+    const D = plan.outline.depth;
+    const windows = (level as any).windows as Array<any> | undefined;
+    if (Array.isArray(windows)) {
+      for (const win of windows) {
+        // 窓の平面中心点 (壁の中心線上)
+        let cxW = 0, czW = 0;
+        if (win.wall === 'south') { cxW = win.centerX; czW = 0; }
+        else if (win.wall === 'north') { cxW = win.centerX; czW = D; }
+        else if (win.wall === 'west')  { cxW = 0; czW = win.centerZ; }
+        else if (win.wall === 'east')  { cxW = W; czW = win.centerZ; }
+        else { console.warn(`[window] unknown wall:`, win); continue; }
+
+        // 該当する外壁辺を探す
+        let bestIdx = -1, bestT = 0, bestDist = Infinity;
+        for (let i = 0; i < wallSegs.length; i++) {
+          const e = wallSegs[i].e;
+          if (e.count !== 1) continue; // 外壁のみ
+          const dx = e.b[0] - e.a[0], dz = e.b[1] - e.a[1];
+          const len2 = dx * dx + dz * dz;
+          if (len2 === 0) continue;
+          const tParam = ((cxW - e.a[0]) * dx + (czW - e.a[1]) * dz) / len2;
+          if (tParam < 0 || tParam > 1) continue;
+          const projX = e.a[0] + tParam * dx;
+          const projZ = e.a[1] + tParam * dz;
+          const d2 = (cxW - projX) ** 2 + (czW - projZ) ** 2;
+          if (d2 < bestDist) { bestDist = d2; bestIdx = i; bestT = tParam; }
+        }
+        if (bestIdx < 0 || bestDist > 1.0) {
+          console.warn(`[window] not on any outer wall edge:`, win);
+          continue;
+        }
+        const ws = wallSegs[bestIdx];
+        const e = ws.e;
+        const len = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
+        const halfTW = win.width / 2 / len;  // window 幅を t (0..1) に変換
+        const tStart = Math.max(0, bestT - halfTW);
+        const tEnd = Math.min(1, bestT + halfTW);
+        ws.windows.push({ tStart, tEnd, sillY: win.sillY, height: win.height });
+
+        // ガラス板を別途作る (窓開口の中に貼り付け、視覚的に窓と分かる)
+        const ux = (e.b[0] - e.a[0]) / len, uz = (e.b[1] - e.a[1]) / len;
+        const cxOnE = e.a[0] + bestT * (e.b[0] - e.a[0]);
+        const czOnE = e.a[1] + bestT * (e.b[1] - e.a[1]);
+        const halfW = win.width / 2;
+        glassPanels.push({
+          a: [cxOnE - ux * halfW, czOnE - uz * halfW],
+          b: [cxOnE + ux * halfW, czOnE + uz * halfW],
+          sillY: win.sillY, height: win.height,
+        });
+      }
+    }
+
     // 3. wallSegs の各セグメントを makeWall で IFC 壁に変換
     //    外壁は床版・基礎の側面を覆うため Y方向を上下に延長する
     //    - 1F外壁: 基礎上面 (Y=-100) 〜 2F床上面 (Y=4040) まで連続
@@ -304,8 +362,6 @@ async function main() {
     //    内壁は階ごとに通常の高さ
     const isFirstStorey = levelIdx === 0;
     const FOUNDATION_TOP = -100; // mm
-    const W = plan.outline.width;
-    const D = plan.outline.depth;
     // 「辺の両端が外形の同じ辺に乗っている」かどうかの判定
     const isOnOuterEdge = (a: [number, number], b: [number, number]): boolean => {
       if (a[0] === 0 && b[0] === 0) return true;       // 西辺
@@ -315,23 +371,65 @@ async function main() {
       return false;
     };
     for (const ws of wallSegs) {
-      // 吹抜だけが接する辺 → 通常スキップ
-      // ただし「外形辺と一致する辺」は外壁として必要なので残す
       if (ws.e.touchesVoid && ws.e.count === 1 && !isOnOuterEdge(ws.e.a, ws.e.b)) continue;
       const isExternal = ws.e.count === 1;
       const thickness = isExternal ? OUT_T : WALL_T;
-      // 外壁だけ Y方向を拡張 (床版・基礎・上階壁との境目を覆う)
-      // - 下: 基礎上面まで (-100 に届かせる)
-      // - 上: 上階壁の下端より +100mm 重ねる (Z-fight回避)
       const extendDown = isExternal && isFirstStorey ? -FOUNDATION_TOP : 0;
       const extendUp = isExternal && nextLevel ? SLAB_T + 100 : 0;
       const wallH = wallHeight + extendDown + extendUp;
+      const baseY = -extendDown;          // 外壁の下端 Y
+      const topY = baseY + wallH;          // 外壁の上端 Y
+
       for (const seg of ws.segs) {
         const segLen = Math.hypot(seg.b[0] - seg.a[0], seg.b[1] - seg.a[1]);
         if (segLen < 50) continue;
-        makeWallAtY(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, seg.a, seg.b, thickness, wallH, -extendDown)
+        // 窓開口がこの seg と重なっているか
+        // seg は ws.e の部分集合 (ドアで切られている)。窓は ws.e 上の t 範囲で持つ
+        const segTStart = paramOnEdge(ws.e, seg.a);
+        const segTEnd = paramOnEdge(ws.e, seg.b);
+        const segTLo = Math.min(segTStart, segTEnd);
+        const segTHi = Math.max(segTStart, segTEnd);
+        // この seg と交差する窓開口
+        const winsInSeg = ws.windows
+          .map((w) => ({ tLo: Math.max(segTLo, w.tStart), tHi: Math.min(segTHi, w.tEnd), sillY: w.sillY, height: w.height }))
+          .filter((w) => w.tHi > w.tLo + 0.001);
+
+        if (winsInSeg.length === 0) {
+          makeWallAtY(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, seg.a, seg.b, thickness, wallH, baseY)
+            .forEach((w) => containedProducts.push(w));
+          continue;
+        }
+        // 窓ごとに seg を「左壁・腰壁・垂れ壁・右壁」に分割
+        // 簡易: 1つの seg に窓1つだけがあるケースのみサポート
+        const win = winsInSeg[0]; // 複数あれば最初のだけ (実装簡略)
+        const dx = ws.e.b[0] - ws.e.a[0], dz = ws.e.b[1] - ws.e.a[1];
+        const winLeft: [number, number]  = [ws.e.a[0] + win.tLo * dx, ws.e.a[1] + win.tLo * dz];
+        const winRight: [number, number] = [ws.e.a[0] + win.tHi * dx, ws.e.a[1] + win.tHi * dz];
+        // 左壁: seg.a → winLeft (フル高)
+        makeWallAtY(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, seg.a, winLeft, thickness, wallH, baseY)
+          .forEach((w) => containedProducts.push(w));
+        // 腰壁: winLeft → winRight、Y=baseY..win.sillY
+        if (win.sillY > baseY) {
+          makeWallAtY(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, winLeft, winRight, thickness, win.sillY - baseY, baseY)
+            .forEach((w) => containedProducts.push(w));
+        }
+        // 垂れ壁: winLeft → winRight、Y=(win.sillY+win.height)..topY
+        const winTop = win.sillY + win.height;
+        if (winTop < topY) {
+          makeWallAtY(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, winLeft, winRight, thickness, topY - winTop, winTop)
+            .forEach((w) => containedProducts.push(w));
+        }
+        // 右壁: winRight → seg.b (フル高)
+        makeWallAtY(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, winRight, seg.b, thickness, wallH, baseY)
           .forEach((w) => containedProducts.push(w));
       }
+    }
+
+    // 4.6 ガラス板 (窓開口にはめ込む)
+    for (const g of glassPanels) {
+      makeNamedSlab(t, v, ctx, owner, storeyPlace, origin, zDir, xDir,
+        g.a, g.b, 30, g.height, g.sillY, 'window')
+        .forEach((wEnt) => containedProducts.push(wEnt));
     }
 
     // 4. 引き戸パネル
@@ -340,39 +438,7 @@ async function main() {
         .forEach((w) => containedProducts.push(w));
     }
 
-    // 4.5 窓: 外壁面の前面に薄いガラス板を貼り付ける
-    //   wall: 'south'/'north' → centerX 必須、辺は z=0 / z=D
-    //   wall: 'east'/'west'   → centerZ 必須、辺は x=W / x=0
-    const windows = (level as any).windows as Array<any> | undefined;
-    if (Array.isArray(windows)) {
-      for (const win of windows) {
-        // 窓の中心点と方向 (x方向か z方向か)
-        let cx = 0, cz = 0;       // 窓中心 (mm, 平面上)
-        let isHoriz = false;       // true=南北面 (X方向)、false=東西面 (Z方向)
-        if (win.wall === 'south') { cz = 0;             cx = win.centerX; isHoriz = true; }
-        else if (win.wall === 'north') { cz = D;        cx = win.centerX; isHoriz = true; }
-        else if (win.wall === 'west')  { cx = 0;        cz = win.centerZ; isHoriz = false; }
-        else if (win.wall === 'east')  { cx = W;        cz = win.centerZ; isHoriz = false; }
-        else { console.warn(`[window] unknown wall:`, win); continue; }
-
-        const halfW = win.width / 2;
-        // 板状ガラス: 幅=win.width, 高さ=win.height, 厚=20mm
-        // 配置: 平面上は壁中心線に乗せる、Y方向は sillY..(sillY+height)
-        let a, b;
-        if (isHoriz) {
-          a = [cx - halfW, cz];
-          b = [cx + halfW, cz];
-        } else {
-          a = [cx, cz - halfW];
-          b = [cx, cz + halfW];
-        }
-        const winThick = OUT_T + 4; // 壁厚より少し外に出して見えるように
-        // 窓 = IFCWALLSTANDARDCASE で 'window' という名前で出す。building.ts 側で色分けする
-        makeNamedSlab(t, v, ctx, owner, storeyPlace, origin, zDir, xDir,
-          a, b, winThick, win.height, win.sillY, 'window')
-          .forEach((wEnt) => containedProducts.push(wEnt));
-      }
-    }
+    // (窓は前段階で wallSegs.windows に登録済み。後の壁生成ループで開口処理)
 
     // 5. 1F のときだけ、external_features (玄関アプローチ・基礎など) を生成
     if (level.name === '1F' && Array.isArray((plan as any).external_features)) {
@@ -514,6 +580,14 @@ function edgeKey(a: [number, number], b: [number, number]): string {
   const k1 = `${a[0]},${a[1]}`;
   const k2 = `${b[0]},${b[1]}`;
   return k1 < k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
+}
+
+// 点 p が edge (a, b) 上のどの位置にあるか (parametrized 0..1)
+function paramOnEdge(e: { a: [number, number]; b: [number, number] }, p: [number, number]): number {
+  const dx = e.b[0] - e.a[0], dz = e.b[1] - e.a[1];
+  const len2 = dx * dx + dz * dz;
+  if (len2 === 0) return 0;
+  return ((p[0] - e.a[0]) * dx + (p[1] - e.a[1]) * dz) / len2;
 }
 
 // 部屋ポリゴンの「外形に接する辺」を外側に拡張する。
