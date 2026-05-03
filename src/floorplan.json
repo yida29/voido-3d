@@ -1,0 +1,133 @@
+{
+  "$comment": "voido 間取り図の単一の真実源 (Single Source of Truth)。マイホームクラウドの PDF (01_01_名称未設定.pdf) の寸法に厳密準拠。座標系: mm単位、原点=建物南西角、+X=東、+Z=北、+Y=上。",
+  "name": "voido",
+  "units": "mm",
+  "outline": { "width": 10920, "depth": 9100 },
+  "levels": [
+    {
+      "name": "1F",
+      "floorY": 0,
+      "ceilingHeight": 2900,
+      "rooms": [
+        {
+          "name": "stair_hall",
+          "label": "階段ホール",
+          "polygon": [[0, 6597], [2048, 6597], [2048, 9100], [0, 9100]]
+        },
+        {
+          "name": "storage",
+          "label": "収納",
+          "polygon": [[2048, 6597], [3641, 6597], [3641, 9100], [2048, 9100]]
+        },
+        {
+          "name": "toilet",
+          "label": "トイレ",
+          "polygon": [[3641, 6597], [5006, 6597], [5006, 9100], [3641, 9100]]
+        },
+        {
+          "name": "washroom",
+          "label": "洗面所",
+          "polygon": [[5006, 6597], [7964, 6597], [7964, 9100], [5006, 9100]]
+        },
+        {
+          "name": "bathroom",
+          "label": "浴室",
+          "polygon": [[7964, 6597], [10920, 6597], [10920, 9100], [7964, 9100]]
+        },
+        {
+          "name": "living",
+          "label": "洋室 (約46.5帖)",
+          "polygon": [[0, 0], [10920, 0], [10920, 6597], [0, 6597]]
+        }
+      ],
+      "doors": [
+        { "$comment": "玄関 (南壁、東寄り、片開 W=910 H=1100)",
+          "wall": "south", "centerX": 9320, "width": 910, "height": 1100, "external": true },
+        { "$comment": "階段ホール → 洋室 (内壁、西寄り)",
+          "wall": "north_internal_z6597", "centerX": 1024, "width": 1000, "height": 2000 },
+        { "$comment": "洗面所 入口 (洋室から)",
+          "wall": "north_internal_z6597", "centerX": 6485, "width": 1000, "height": 2000 },
+        { "$comment": "浴室入口 (洗面所から、北寄り)",
+          "wall": "internal_x7964", "centerZ": 8650, "width": 900, "height": 2000 }
+      ]
+    },
+    {
+      "name": "2F",
+      "floorY": 4040,
+      "ceilingHeight": 2425,
+      "rooms": [
+        {
+          "name": "west_main",
+          "label": "洋室 (約29.4帖)",
+          "$comment": "南西側に吹抜 (5460×2503) を含むので L 字ポリゴン",
+          "polygon": [
+            [0, 2503],
+            [5460, 2503],
+            [5460, 0],
+            [6825, 0],
+            [6825, 9100],
+            [0, 9100]
+          ]
+        },
+        {
+          "name": "east_south",
+          "label": "洋室 (約11.3帖, 南)",
+          "polygon": [[6825, 0], [10920, 0], [10920, 4550], [6825, 4550]]
+        },
+        {
+          "name": "east_north",
+          "label": "洋室 (約11.3帖, 北)",
+          "polygon": [[6825, 4550], [10920, 4550], [10920, 9100], [6825, 9100]]
+        },
+        {
+          "name": "void",
+          "label": "吹抜",
+          "$comment": "床なし (1F天井まで吹き抜け)",
+          "polygon": [[0, 0], [5460, 0], [5460, 2503], [0, 2503]],
+          "isVoid": true
+        }
+      ],
+      "doors": [
+        { "$comment": "西大洋室 → 東 (内壁 X=6825、北寄りに開口)",
+          "wall": "internal_x6825", "centerZ": 7600, "width": 900, "height": 2000 },
+        { "$comment": "東部屋を上下分割する内壁の開口 (中央)",
+          "wall": "internal_z4550_east", "centerX": 8872, "width": 900, "height": 2000 }
+      ]
+    }
+  ],
+  "stairs": [
+    {
+      "name": "main_stair",
+      "level": "1F_to_2F",
+      "$comment": "U字階段。西側を北上→踊り場→東側を南下。",
+      "footprint": [[100, 6647], [2048, 6647], [2048, 9000], [100, 9000]],
+      "topY": 4040,
+      "totalSteps": 14,
+      "shape": "u_turn"
+    }
+  ],
+  "fixtures": [
+    { "$comment": "1F キッチン: 西壁沿いに L字。冷蔵庫(南端) + シンク + IH",
+      "type": "kitchen_counter", "level": "1F", "x": 180, "y": 0, "z": 1000, "sx": 650, "sy": 900, "sz": 4000 },
+    { "type": "fridge",      "level": "1F", "x": 180, "y": 0, "z": 200,  "sx": 700, "sy": 1800, "sz": 700 },
+    { "type": "ih_cooktop",  "level": "1F", "x": 230, "y": 920, "z": 4200, "sx": 550, "sy": 40, "sz": 550 },
+    { "type": "kitchen_sink","level": "1F", "x": 230, "y": 920, "z": 2000, "sx": 550, "sy": 40, "sz": 700 },
+    { "$comment": "1F リビングテーブル ×2 (PDF にダイニング2脚記載)",
+      "type": "table",       "level": "1F", "centerX": 5000, "centerZ": 4500, "sx": 2400, "sy": 750, "sz": 1200 },
+    { "type": "table",       "level": "1F", "centerX": 5000, "centerZ": 1600, "sx": 2400, "sy": 750, "sz": 1200 },
+    { "type": "storage_unit","level": "1F", "x": 2148, "y": 0, "z": 6697, "sx": 1400, "sy": 1800, "sz": 2200 },
+    { "type": "toilet_bowl", "level": "1F", "x": 4091, "y": 0, "z": 6997, "sx": 400, "sy": 500, "sz": 700 },
+    { "type": "washbasin",   "level": "1F", "x": 5206, "y": 0, "z": 6797, "sx": 1200, "sy": 850, "sz": 500 },
+    { "type": "washing_machine","level": "1F", "x": 6606, "y": 0, "z": 6797, "sx": 600, "sy": 950, "sz": 600 },
+    { "type": "bathtub",     "level": "1F", "x": 8464, "y": 0, "z": 7197, "sx": 1600, "sy": 550, "sz": 1000 },
+
+    { "$comment": "2F 西大洋室 ソファ + ローテーブル",
+      "type": "sofa",  "level": "2F", "x": 1000, "y": 4040, "z": 6000, "sx": 2400, "sy": 700, "sz": 900 },
+    { "type": "table", "level": "2F", "centerX": 2300, "centerZ": 7200, "sx": 1600, "sy": 400, "sz": 800 },
+
+    { "$comment": "2F 東上 (north) ベッド",
+      "type": "bunk_bed", "level": "2F", "centerX": 8500, "centerZ": 6500, "rotY": 0 },
+    { "$comment": "2F 東下 (south) ベッド",
+      "type": "bunk_bed", "level": "2F", "centerX": 8500, "centerZ": 1800, "rotY": 0 }
+  ]
+}

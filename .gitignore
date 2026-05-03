@@ -3,3 +3,7 @@ dist
 .DS_Store
 *.log
 .vite
+
+# WASM はビルド時に node_modules からコピーされるので git 管理しない
+public/web-ifc.wasm
+public/web-ifc-mt.wasm

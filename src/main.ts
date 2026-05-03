@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createScene } from './scene';
-import { buildVoido } from './building';
+import { loadVoidoIFC } from './building';
 import { createControls } from './controls';
 import { Collider } from './collision';
 
@@ -17,12 +17,6 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 
 const { scene, camera } = createScene();
-const building = buildVoido();
-scene.add(building.root);
-
-const collider = new Collider(building.walls);
-const controls = createControls(camera, overlay, collider);
-scene.add(controls.object);
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -30,11 +24,26 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-const clock = new THREE.Clock();
-function animate() {
-  const dt = Math.min(clock.getDelta(), 0.1);
-  controls.update(dt);
-  renderer.render(scene, camera);
-  requestAnimationFrame(animate);
+async function init() {
+  const ifcUrl = `${import.meta.env.BASE_URL}voido.ifc`;
+  const building = await loadVoidoIFC(ifcUrl);
+  scene.add(building.root);
+
+  const collider = new Collider(building.walls);
+  const controls = createControls(camera, overlay, collider);
+  scene.add(controls.object);
+
+  const clock = new THREE.Clock();
+  function animate() {
+    const dt = Math.min(clock.getDelta(), 0.1);
+    controls.update(dt);
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+  animate();
 }
-animate();
+
+init().catch((err) => {
+  console.error('init failed:', err);
+  overlay.innerHTML = `<h1>読み込みエラー</h1><p>${(err as Error).message}</p>`;
+});
