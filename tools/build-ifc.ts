@@ -308,9 +308,33 @@ async function main() {
         .forEach((w) => containedProducts.push(w));
     }
 
-    // 5. 1F のときだけ、external_features (玄関アプローチなど) を生成
+    // 5. 1F のときだけ、external_features (玄関アプローチ・基礎など) を生成
     if (level.name === '1F' && Array.isArray((plan as any).external_features)) {
       for (const f of (plan as any).external_features as any[]) {
+        // 基礎: bottomY〜topY の厚みを持つ矩形スラブ
+        if (f.type === 'foundation') {
+          const x0 = f.x;
+          const z0 = f.z;
+          const fPoly: [number, number][] = [
+            [x0, z0], [x0 + f.width, z0],
+            [x0 + f.width, z0 + f.depth], [x0, z0 + f.depth],
+          ];
+          const fProf = makePolygonProfile(t, fPoly);
+          const fHeight = f.topY - f.bottomY;
+          const fPlace = localPlace(storeyPlace, 0, 0, f.bottomY);
+          const fPlace2d = t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]);
+          const fSolid = t(IFC.IFCEXTRUDEDAREASOLID, [fProf, fPlace2d, zDir, fHeight]);
+          const fRep = t(IFC.IFCSHAPEREPRESENTATION, [
+            ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [fSolid],
+          ]);
+          const fShape = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [fRep]]);
+          const fSlab = t(IFC.IFCSLAB, [
+            guid(), owner, v(IFC.IFCLABEL, 'foundation'), null, null,
+            fPlace, fShape, null, 'BASESLAB',
+          ]);
+          containedProducts.push(fSlab);
+        }
+
         if (f.type === 'entry_porch') {
           // バルコニー (デッキ): 矩形スラブ
           if (f.balcony) {

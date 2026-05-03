@@ -108,16 +108,21 @@
   ],
   "external_features": [
     {
-      "$comment": "玄関アプローチ: バルコニー (デッキ) + 3段階段。バルコニー上面 = 1F床上面 (Y=0、玄関の床と同じレベル)",
+      "$comment": "玄関アプローチ: 建物全幅のウッドデッキ + 3段階段。デッキ上面 = 1F床上面 (Y=0)",
       "type": "entry_porch",
       "balcony": {
-        "$comment": "玄関ドア (centerX=9320, width=910) の前にデッキを設置。深さ 1500mm",
-        "centerX": 9320, "z": -1500, "width": 2400, "depth": 1500, "topY": 0, "thickness": 200
+        "$comment": "建物の横幅 (10920mm) に揃えたウッドデッキ。深さ 1500mm",
+        "centerX": 5460, "z": -1500, "width": 10920, "depth": 1500, "topY": 0, "thickness": 200
       },
       "stairs": {
-        "$comment": "3段階段。地面 (Y=-565) からバルコニー上面 (Y=0) まで。1段=190mm前後",
+        "$comment": "3段階段。地面 (Y=-565) からデッキ上面 (Y=0) まで。玄関ドア (centerX=9320) の正面",
         "centerX": 9320, "z": -2700, "width": 1600, "depth": 1200, "totalRise": 565, "steps": 3
       }
+    },
+    {
+      "$comment": "基礎: 1F床下 (Y=-565 〜 -100) を埋めて家が浮かないようにする。建物外形のサイズで配置",
+      "type": "foundation",
+      "x": 0, "z": 0, "width": 10920, "depth": 9100, "bottomY": -565, "topY": -100
     }
   ],
   "fixtures": [
