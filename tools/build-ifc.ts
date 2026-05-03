@@ -391,7 +391,9 @@ async function main() {
       const thickness = isExternal ? OUT_T : WALL_T;
       const extendDown = isExternal && isFirstStorey ? -FOUNDATION_TOP : 0;
       const extendUp = isExternal && nextLevel ? SLAB_T + 100 : 0;
-      const wallH = wallHeight + extendDown + extendUp;
+      // 最上階の内壁は屋根斜面に貫通しないよう 200mm 下げる
+      const innerWallShorten = !isExternal && !nextLevel ? 200 : 0;
+      const wallH = wallHeight + extendDown + extendUp - innerWallShorten;
       const baseY = -extendDown;
       const topY = baseY + wallH;
       const side = isExternal ? sideOfEdge(ws.e.a, ws.e.b) : null;

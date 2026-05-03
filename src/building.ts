@@ -65,7 +65,8 @@ function colorByName(name: string | undefined, typeName: string): number | undef
   //   東/西面: やや明るいグレーブルー (写真3で側面が明るく見える)
   if (name === 'wall_S' || name === 'wall_N') return 0x3d5575;
   if (name === 'wall_E' || name === 'wall_W') return 0x4d6580;
-  if (name === 'wall_inner') return 0xeae5d9;            // 内壁は明るいグレージュ
+  // 内壁色: 写真の室内に近い「ややくすんだ白〜ベージュ」
+  if (name === 'wall_inner') return 0xc8c0b0;
   if (name.endsWith('_slab') || name.includes('_slab_')) return 0x8b5a3c;
   void typeName;
   return undefined;
