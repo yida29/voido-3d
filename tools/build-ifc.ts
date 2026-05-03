@@ -412,7 +412,8 @@ async function main() {
     // 6. 最上階なら屋根 (大屋根スラブ) を追加して雨風を凌げるようにする
     if (!nextLevel) {
       const ROOF_T = 200; // 屋根厚 mm
-      const overhang = 300; // 軒の出 mm
+      const overhang = 90; // 軒の出 mm = 外壁の外側面と一致 (外形 + OUT_T/2)。
+                            // これより大きいと軒下に影で「黒い帯」ができ隙間に見える
       const roofPoly: [number, number][] = [
         [-overhang, -overhang],
         [plan.outline.width + overhang, -overhang],

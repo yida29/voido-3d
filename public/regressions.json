@@ -1,0 +1,33 @@
+{
+  "$comment": "ユーザーが「ここがおかしい」と指摘した視点のアーカイブ。検証ダッシュボードの『回帰チェック』に表示し、毎ビルド再撮影される。一度直したものでも再発しないか目視で確認できる。",
+  "viewpoints": [
+    {
+      "id": "void-southwest-2f",
+      "label": "2F西大洋室の南西吹抜 (壁と床がないはず)",
+      "reportedAt": "2026-05-04",
+      "issue": "ここの壁と床は吹抜なのでないはず",
+      "url": "?posX=-2.753&posY=5.640&posZ=2.472&rotX=-0.054&rotY=0.015"
+    },
+    {
+      "id": "south-gap-base-1f",
+      "label": "南面 1F壁と基礎の境目 (隙間が見えるか)",
+      "reportedAt": "2026-05-04",
+      "issue": "基礎と1階の部分に隙間",
+      "url": "?posX=0&posY=2.5&posZ=10&rotX=-0.05&rotY=0"
+    },
+    {
+      "id": "south-gap-1f-2f",
+      "label": "南面 1F壁と2F壁の境目 (隙間が見えるか)",
+      "reportedAt": "2026-05-04",
+      "issue": "1階と2階の部分に隙間",
+      "url": "?posX=0&posY=4.5&posZ=10&rotX=-0.05&rotY=0"
+    },
+    {
+      "id": "south-very-close",
+      "label": "南面に超接近 (地面・基礎・1F壁が同時に見える)",
+      "reportedAt": "2026-05-04",
+      "issue": "隙間風が入りそう",
+      "url": "?posX=0&posY=1.5&posZ=7&rotX=0&rotY=0"
+    }
+  ]
+}

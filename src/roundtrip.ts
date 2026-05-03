@@ -11,6 +11,7 @@ const stats = document.getElementById('stats') as HTMLSpanElement;
 const downloadBtn = document.getElementById('download') as HTMLButtonElement;
 const integrityList = document.getElementById('integrity') as HTMLUListElement;
 const galleryEl = document.getElementById('gallery') as HTMLDivElement;
+const regressionsEl = document.getElementById('regressions') as HTMLDivElement;
 
 const canvas1 = document.getElementById('top-1f') as HTMLCanvasElement;
 const canvas2 = document.getElementById('top-2f') as HTMLCanvasElement;
@@ -77,6 +78,9 @@ runIntegrityChecks(building, violations);
 
 // === ② 多角度プレビュー ===
 buildGallery();
+
+// === ③ 回帰チェック ===
+await buildRegressions();
 
 
 downloadBtn.addEventListener('click', () => {
@@ -385,6 +389,31 @@ function bbox2D(meshes: IFCMeshInfo[]): { area: number } {
 }
 
 // === Gallery: 多角度から index.html を iframe で開いて見る ===
+async function buildRegressions() {
+  const base = import.meta.env.BASE_URL;
+  let data: { viewpoints: { id: string; label: string; issue?: string; reportedAt?: string; url: string }[] };
+  try {
+    data = await (await fetch(`${base}regressions.json`)).json();
+  } catch {
+    regressionsEl.innerHTML = `<p style="color:#888">regressions.json なし</p>`;
+    return;
+  }
+  regressionsEl.innerHTML = '';
+  for (const v of data.viewpoints) {
+    const fig = document.createElement('figure');
+    const cap = document.createElement('figcaption');
+    cap.innerHTML = `<span><b>${v.label}</b><br><span style="opacity:0.7">${v.issue ?? ''} (${v.reportedAt ?? ''})</span></span>`;
+    cap.style.fontSize = '10px';
+    const iframe = document.createElement('iframe');
+    const sep = v.url.includes('?') ? '&' : '?';
+    iframe.src = `${base}${v.url}${sep}hideHud=1`;
+    iframe.loading = 'lazy';
+    fig.appendChild(cap);
+    fig.appendChild(iframe);
+    regressionsEl.appendChild(fig);
+  }
+}
+
 function buildGallery() {
   const base = import.meta.env.BASE_URL;
   const VIEWS = [
