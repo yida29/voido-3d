@@ -192,11 +192,13 @@ async function main() {
     }
 
     // ----- Slab: 各部屋 (isVoid 以外) ごとに床版を1枚ずつ作る -----
-    // これで吹抜の場所には床版が無くなり、1Fから2Fへ視線が抜ける
+    // 床版は外壁の外側面まで広げて Z-fight を回避する。
+    // 部屋ポリゴンの「外形に接する辺」を OUT_T/2 だけ外側に押し出す。
     for (const room of level.rooms) {
       if (room.isVoid) continue;
-      const roomProf = makePolygonProfile(t, room.polygon);
-      const roomPlace = localPlace(storeyPlace, 0, -100, 0); // 上面 = floorY
+      const expandedPoly = expandRoomToOuter(room.polygon, plan.outline.width, plan.outline.depth, OUT_T / 2);
+      const roomProf = makePolygonProfile(t, expandedPoly);
+      const roomPlace = localPlace(storeyPlace, 0, -100, 0);
       const roomPlace2d = t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]);
       const roomSolid = t(IFC.IFCEXTRUDEDAREASOLID, [roomProf, roomPlace2d, zDir, 100]);
       const roomRep = t(IFC.IFCSHAPEREPRESENTATION, [
@@ -306,9 +308,11 @@ async function main() {
       if (ws.e.touchesVoid && ws.e.count === 1) continue;
       const isExternal = ws.e.count === 1;
       const thickness = isExternal ? OUT_T : WALL_T;
-      // 外壁だけ Y方向を拡張 (床版・基礎の側面を覆う)
+      // 外壁だけ Y方向を拡張 (床版・基礎・上階壁との境目を覆う)
+      // - 下: 基礎上面まで (-100 に届かせる)
+      // - 上: 上階壁の下端より +100mm 重ねる (Z-fight回避)
       const extendDown = isExternal && isFirstStorey ? -FOUNDATION_TOP : 0;
-      const extendUp = isExternal && nextLevel ? SLAB_T : 0;
+      const extendUp = isExternal && nextLevel ? SLAB_T + 100 : 0;
       const wallH = wallHeight + extendDown + extendUp;
       for (const seg of ws.segs) {
         const segLen = Math.hypot(seg.b[0] - seg.a[0], seg.b[1] - seg.a[1]);
@@ -464,6 +468,24 @@ function edgeKey(a: [number, number], b: [number, number]): string {
   const k1 = `${a[0]},${a[1]}`;
   const k2 = `${b[0]},${b[1]}`;
   return k1 < k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
+}
+
+// 部屋ポリゴンの「外形に接する辺」を外側に拡張する。
+// 床版を外壁の外側面まで覆って Z-fight を防ぐため。
+function expandRoomToOuter(
+  poly: [number, number][],
+  outlineW: number,
+  outlineD: number,
+  push: number,
+): [number, number][] {
+  return poly.map(([x, z]) => {
+    let nx = x, nz = z;
+    if (x === 0) nx = -push;
+    if (x === outlineW) nx = outlineW + push;
+    if (z === 0) nz = -push;
+    if (z === outlineD) nz = outlineD + push;
+    return [nx, nz];
+  });
 }
 
 function makePolygonProfile(t: (type: number, args: any[]) => any, poly: [number, number][]) {
