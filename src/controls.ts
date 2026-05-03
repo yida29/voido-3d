@@ -52,6 +52,8 @@ export function createControls(
 
   // 現在階を Y 値から推測
   let currentFloor: '1F' | '2F' = startY > (FLOOR_Y_1F + FLOOR_Y_2F) / 2 + EYE_HEIGHT * 0.5 ? '2F' : '1F';
+  let noClip = false;
+  let lockY = true; // 通常は階の床に Y を固定。no-clip 時は自由飛行
 
   // 自動でロックを取る (キャンバス内のクリックで)
   const canvas = document.getElementById('app') as HTMLElement;
@@ -59,7 +61,7 @@ export function createControls(
     if (!controls.isLocked) controls.lock();
   });
 
-  const keys = { f: false, b: false, l: false, r: false, run: false };
+  const keys = { f: false, b: false, l: false, r: false, run: false, up: false, down: false };
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Digit1') {
       currentFloor = '1F';
@@ -73,6 +75,13 @@ export function createControls(
       writeNow();
       return;
     }
+    if (e.code === 'KeyG') {
+      noClip = !noClip;
+      lockY = !noClip;
+      const hud = document.getElementById('mode-status');
+      if (hud) hud.textContent = noClip ? '🛸 no-clip ON' : '';
+      return;
+    }
     updateKeys(e, true);
   });
   window.addEventListener('keyup', (e) => updateKeys(e, false));
@@ -84,6 +93,8 @@ export function createControls(
       case 'KeyA': case 'ArrowLeft':  keys.l = pressed; break;
       case 'KeyD': case 'ArrowRight': keys.r = pressed; break;
       case 'ShiftLeft': case 'ShiftRight': keys.run = pressed; break;
+      case 'Space':                   keys.up = pressed; break;   // no-clip 中の上昇
+      case 'KeyC':                    keys.down = pressed; break; // no-clip 中の下降
     }
   }
 
@@ -115,13 +126,22 @@ export function createControls(
       if (keys.l) move.sub(right);
       if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
 
+      // no-clip 中は上下移動も
+      if (noClip) {
+        if (keys.up)   move.y += speed;
+        if (keys.down) move.y -= speed;
+      }
+
       const cur = controls.object.position;
-      const next = collider.resolve(cur, move);
-      const floorY = currentFloor === '1F' ? FLOOR_Y_1F : FLOOR_Y_2F;
-      next.y = floorY + EYE_HEIGHT;
+      const next = noClip
+        ? cur.clone().add(move)        // no-clip: 衝突判定なし
+        : collider.resolve(cur, move); // 通常: 衝突判定あり
+      if (lockY) {
+        const floorY = currentFloor === '1F' ? FLOOR_Y_1F : FLOOR_Y_2F;
+        next.y = floorY + EYE_HEIGHT;
+      }
       controls.object.position.copy(next);
 
-      // URL に同期 (内部で 250ms throttle)
       writeNow();
     }
   }

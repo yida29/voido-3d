@@ -28,10 +28,11 @@ const c2 = building.meshes.filter((m) => m.storey === '2F').length;
 // XZ 投影だけでは「壁が地面に重なって立ってる」のような Y 異常を見逃す。
 // 階別に各メッシュの Y 範囲が期待値内に収まっているか検査する。
 interface YRange { min: number; max: number; tolerance?: number }
+// 1F壁は 2F床下面 (3940mm) まで延ばして階間の隙間を消している
 const YEXPECT: Record<'1F' | '2F', Partial<Record<string, YRange>>> = {
   '1F': {
     IFCSLAB:             { min: 0,    max: 0.20 },
-    IFCWALLSTANDARDCASE: { min: 0,    max: 2.95 },
+    IFCWALLSTANDARDCASE: { min: 0,    max: 3.95 },
     IFCDOOR:             { min: 0,    max: 2.10 },
   },
   '2F': {

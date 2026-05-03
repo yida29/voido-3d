@@ -142,7 +142,18 @@ async function main() {
 
   // === per-level ===
   const storeyEntities: any[] = [];
-  for (const level of plan.levels) {
+  for (let levelIdx = 0; levelIdx < plan.levels.length; levelIdx++) {
+    const level = plan.levels[levelIdx];
+    const nextLevel = plan.levels[levelIdx + 1]; // undefined なら最上階
+    const SLAB_T = 100; // mm 床版厚
+    // 壁の有効高さ:
+    //  - 中間階: 次階の床下面 (= nextLevel.floorY - SLAB_T) - 当階floorY
+    //  - 最上階: ceilingHeight (天井までで止める)
+    // どちらにしても floorplan.json の ceilingHeight をベースに、
+    // 床版分を吸収して階間の隙間ができないようにする
+    const wallHeight = nextLevel
+      ? (nextLevel.floorY - SLAB_T) - level.floorY
+      : level.ceilingHeight;
     // storey の placement は Y=0 (= 建物 placement と同じ)。
     // 階高 (Elevation) は IfcBuildingStorey の属性で表現する。
     // これにより web-ifc 側は中身ジオメトリの Y を変えず、
@@ -164,6 +175,7 @@ async function main() {
       const spacePlace = localPlace(storeyPlace);
       const profile = makePolygonProfile(t, room.polygon);
       const place2d = t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]);
+      // Space (内部空間) は ceilingHeight (床から天井まで) で押し出す
       const solid = t(IFC.IFCEXTRUDEDAREASOLID, [profile, place2d, zDir, level.ceilingHeight]);
       const shapeRep = t(IFC.IFCSHAPEREPRESENTATION, [
         ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [solid],
@@ -218,7 +230,7 @@ async function main() {
       const thickness = isExternal ? OUT_T : WALL_T;
       // 同じ辺が2つの Space 両方から登録されると count=2 になるが、
       // ここでは中心線方式で 1本だけ作る。
-      makeWall(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, e.a, e.b, thickness, level.ceilingHeight, isExternal)
+      makeWall(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, e.a, e.b, thickness, wallHeight, isExternal)
         .forEach((w) => containedProducts.push(w));
     }
 
