@@ -56,7 +56,12 @@ const OUT_T = 180;  // 外壁厚 mm
 
 async function main() {
   const planPath = path.join(ROOT, 'src/floorplan.json');
-  const plan = JSON.parse(fs.readFileSync(planPath, 'utf8')) as Floorplan;
+  const planRaw = JSON.parse(fs.readFileSync(planPath, 'utf8')) as any;
+  // X方向スケール: floorplan.json の scaleX を全ての X 座標に適用
+  // (現地写真と PDF の建物プロポーション差を吸収する)
+  const scaleX = typeof planRaw.scaleX === 'number' ? planRaw.scaleX : 1.0;
+  const plan = applyScaleX(planRaw, scaleX) as Floorplan;
+  console.log(`[build-ifc] scaleX=${scaleX}, outline=${plan.outline.width}×${plan.outline.depth}mm`);
 
   const ifc = new WebIFC.IfcAPI();
   await ifc.Init();
@@ -249,12 +254,24 @@ async function main() {
     const glassPanels: { a: [number, number]; b: [number, number]; sillY: number; height: number }[] = [];
 
     for (const door of level.doors) {
-      const cx = door.centerX ?? null;
-      const cz = door.centerZ ?? null;
-      // ドアが壁面上にある中心点を決める (片方欠けてる場合はそこを推定)
-      // 実装簡略: 辺ごとに「ドア中心がその辺の線分上にあるか」をテスト
+      // wall ヒント (south/north/east/west) から推測座標を補完。
+      // door.centerZ が指定されていれば優先、なければ wall=south→0, north→D...
+      const W2 = plan.outline.width;
+      const D2 = plan.outline.depth;
+      let cx = door.centerX ?? null;
+      let cz = door.centerZ ?? null;
+      if (door.wall === 'south' && cz === null) cz = 0;
+      else if (door.wall === 'north' && cz === null) cz = D2;
+      else if (door.wall === 'west' && cx === null) cx = 0;
+      else if (door.wall === 'east' && cx === null) cx = W2;
+      // 内壁ドアの場合は wall に推測座標を埋め込む (例: 'internal_x7964', 'north_internal_z6597')
+      const matX = /(?:^|_)x(\d+)/.exec(door.wall);
+      const matZ = /(?:^|_)z(\d+)/.exec(door.wall);
+      if (matX && cx === null) cx = parseInt(matX[1], 10);
+      if (matZ && cz === null) cz = parseInt(matZ[1], 10);
+      // それでも欠けていれば対象辺の中央
       let bestIdx = -1;
-      let bestT = 0; // 0..1
+      let bestT = 0;
       let bestDist = Infinity;
       for (let i = 0; i < wallSegs.length; i++) {
         const e = wallSegs[i].e;
@@ -274,6 +291,7 @@ async function main() {
         console.warn(`[door] not on any wall edge:`, door);
         continue;
       }
+      console.log(`[door] split @ ${level.name} t=${bestT.toFixed(3)} dist=${Math.sqrt(bestDist).toFixed(2)} cx=${cx} cz=${cz} edge=(${wallSegs[bestIdx].e.a})→(${wallSegs[bestIdx].e.b})`);
       // 辺を分割: 元の segs[0] を「a → ドア左端」「ドア右端 → b」に置き換え
       const ws = wallSegs[bestIdx];
       const e = ws.e;
@@ -379,22 +397,26 @@ async function main() {
       return null;
     };
     // 壁を統一して作るヘルパー (方角ごとに name を変える → building.ts で色分け)
-    const emitWall = (a: [number, number], b: [number, number], thick: number, h: number, by: number, side: string | null) => {
-      const name = side ? `wall_${side}` : 'wall_inner';
+    const emitWall = (a: [number, number], b: [number, number], thick: number, h: number, by: number, side: string | null, kind?: string) => {
+      const name = kind ? kind : (side ? `wall_${side}` : 'wall_inner');
       makeNamedSlab(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, a, b, thick, h, by, name)
         .forEach((w) => containedProducts.push(w));
     };
 
+    const RAILING_H = 1100; // 吹抜の手すり高さ mm
     for (const ws of wallSegs) {
       if (ws.e.touchesVoid && ws.e.count === 1 && !isOnOuterEdge(ws.e.a, ws.e.b)) continue;
       const isExternal = ws.e.count === 1;
-      const thickness = isExternal ? OUT_T : WALL_T;
+      // 吹抜と実部屋が接する内辺 → 「壁」ではなく「手すり (柵)」として薄く低く作る
+      const isRailing = ws.e.touchesVoid && ws.e.count === 2;
+      const thickness = isExternal ? OUT_T : (isRailing ? 50 : WALL_T);
       const extendDown = isExternal && isFirstStorey ? -FOUNDATION_TOP : 0;
       const extendUp = isExternal && nextLevel ? SLAB_T + 100 : 0;
-      // 最上階の内壁は屋根斜面に貫通しないよう 200mm 下げる
       const innerWallShorten = !isExternal && !nextLevel ? 200 : 0;
-      const wallH = wallHeight + extendDown + extendUp - innerWallShorten;
-      const baseY = -extendDown;
+      const wallH = isRailing
+        ? RAILING_H
+        : wallHeight + extendDown + extendUp - innerWallShorten;
+      const baseY = isRailing ? 0 : -extendDown;
       const topY = baseY + wallH;
       const side = isExternal ? sideOfEdge(ws.e.a, ws.e.b) : null;
 
@@ -412,19 +434,32 @@ async function main() {
           .map((w) => ({ tLo: Math.max(segTLo, w.tStart), tHi: Math.min(segTHi, w.tEnd), sillY: w.sillY, height: w.height }))
           .filter((w) => w.tHi > w.tLo + 0.001);
 
+        const railKind = isRailing ? 'railing' : undefined;
         if (winsInSeg.length === 0) {
-          emitWall(seg.a, seg.b, thickness, wallH, baseY, side);
+          emitWall(seg.a, seg.b, thickness, wallH, baseY, side, railKind);
           continue;
         }
-        const win = winsInSeg[0];
+        // 窓を t順にソート (左→右)
+        winsInSeg.sort((a, b) => a.tLo - b.tLo);
         const dx = ws.e.b[0] - ws.e.a[0], dz = ws.e.b[1] - ws.e.a[1];
-        const winLeft: [number, number]  = [ws.e.a[0] + win.tLo * dx, ws.e.a[1] + win.tLo * dz];
-        const winRight: [number, number] = [ws.e.a[0] + win.tHi * dx, ws.e.a[1] + win.tHi * dz];
-        emitWall(seg.a, winLeft, thickness, wallH, baseY, side);
-        if (win.sillY > baseY) emitWall(winLeft, winRight, thickness, win.sillY - baseY, baseY, side);
-        const winTop = win.sillY + win.height;
-        if (winTop < topY) emitWall(winLeft, winRight, thickness, topY - winTop, winTop, side);
-        emitWall(winRight, seg.b, thickness, wallH, baseY, side);
+        const ptAt = (t: number): [number, number] => [ws.e.a[0] + t * dx, ws.e.a[1] + t * dz];
+
+        // 「現在のフル高壁の左端」を窓を1つずつ進めながら更新
+        let cursor = seg.a;
+        for (const win of winsInSeg) {
+          const winLeft = ptAt(win.tLo);
+          const winRight = ptAt(win.tHi);
+          // フル高: cursor → winLeft
+          emitWall(cursor, winLeft, thickness, wallH, baseY, side, railKind);
+          // 腰壁: winLeft → winRight、Y=baseY..win.sillY
+          if (win.sillY > baseY) emitWall(winLeft, winRight, thickness, win.sillY - baseY, baseY, side, railKind);
+          // 垂れ壁: winLeft → winRight、Y=(win.sillY+win.height)..topY
+          const winTop = win.sillY + win.height;
+          if (winTop < topY) emitWall(winLeft, winRight, thickness, topY - winTop, winTop, side, railKind);
+          cursor = winRight;
+        }
+        // 最後の窓の右端 → seg.b
+        emitWall(cursor, seg.b, thickness, wallH, baseY, side, railKind);
       }
     }
 
@@ -604,6 +639,57 @@ function paramOnEdge(e: { a: [number, number]; b: [number, number] }, p: [number
 
 // 部屋ポリゴンの「外形に接する辺」を外側に拡張する。
 // 床版を外壁の外側面まで覆って Z-fight を防ぐため。
+// floorplan の全 X 座標を s 倍する (深いコピーして返す)
+// 対象: outline.width, room.polygon[*][0], door.centerX, window.centerX,
+//       fixtures.x/centerX/sx, external_features の x/centerX/width
+function applyScaleX(plan: any, s: number): any {
+  if (s === 1.0) return plan;
+  const p = JSON.parse(JSON.stringify(plan));
+  if (p.outline) p.outline.width = Math.round(p.outline.width * s);
+  for (const lvl of p.levels ?? []) {
+    for (const r of lvl.rooms ?? []) {
+      if (Array.isArray(r.polygon)) {
+        r.polygon = r.polygon.map(([x, z]: [number, number]) => [Math.round(x * s), z]);
+      }
+    }
+    for (const d of lvl.doors ?? []) {
+      if (typeof d.centerX === 'number') d.centerX = Math.round(d.centerX * s);
+    }
+    for (const w of lvl.windows ?? []) {
+      if (typeof w.centerX === 'number') w.centerX = Math.round(w.centerX * s);
+    }
+  }
+  for (const f of p.fixtures ?? []) {
+    if (typeof f.x === 'number') f.x = Math.round(f.x * s);
+    if (typeof f.centerX === 'number') f.centerX = Math.round(f.centerX * s);
+    if (typeof f.sx === 'number') f.sx = Math.round(f.sx * s);
+  }
+  for (const st of p.stairs ?? []) {
+    if (Array.isArray(st.footprint)) {
+      st.footprint = st.footprint.map(([x, z]: [number, number]) => [Math.round(x * s), z]);
+    }
+  }
+  for (const ef of p.external_features ?? []) {
+    if (ef.foundation) {
+      ef.foundation.x = Math.round((ef.foundation.x ?? 0) * s);
+      ef.foundation.width = Math.round((ef.foundation.width ?? 0) * s);
+    }
+    if (ef.balcony) {
+      if (typeof ef.balcony.centerX === 'number') ef.balcony.centerX = Math.round(ef.balcony.centerX * s);
+      if (typeof ef.balcony.width === 'number') ef.balcony.width = Math.round(ef.balcony.width * s);
+    }
+    if (ef.stairs) {
+      if (typeof ef.stairs.centerX === 'number') ef.stairs.centerX = Math.round(ef.stairs.centerX * s);
+      if (typeof ef.stairs.width === 'number') ef.stairs.width = Math.round(ef.stairs.width * s);
+    }
+    if (ef.type === 'foundation') {
+      if (typeof ef.x === 'number') ef.x = Math.round(ef.x * s);
+      if (typeof ef.width === 'number') ef.width = Math.round(ef.width * s);
+    }
+  }
+  return p;
+}
+
 function expandRoomToOuter(
   poly: [number, number][],
   outlineW: number,

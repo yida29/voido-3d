@@ -59,15 +59,18 @@ function colorByName(name: string | undefined, typeName: string): number | undef
   if (name === 'entry_balcony') return 0x8b5a3c;
   if (name.startsWith('entry_step')) return 0x8b5a3c;
   if (name === 'window') return 0xaad8ff;
+  if (name === 'railing') return 0x6b4a30;       // 吹抜の手すり: ダーク木目
   // 外壁を方角ごとに塗り分け (Google Maps 写真より):
   //   南面 (玄関側): 濃いネイビー
   //   北面: 濃いネイビー
   //   東/西面: やや明るいグレーブルー (写真3で側面が明るく見える)
   if (name === 'wall_S' || name === 'wall_N') return 0x3d5575;
   if (name === 'wall_E' || name === 'wall_W') return 0x4d6580;
-  // 内壁色: 写真の室内に近い「ややくすんだ白〜ベージュ」
-  if (name === 'wall_inner') return 0xc8c0b0;
-  if (name.endsWith('_slab') || name.includes('_slab_')) return 0x8b5a3c;
+  // 室内をウッド質感に統一 (家の中はナチュラルウッドの内装)
+  // 内壁: 明るめのウッド (オーク系、サイディングの板張り)
+  if (name === 'wall_inner') return 0xc99565;
+  // 室内床/天井 (= 各階の slab): やや暗めのウッド (フローリング)
+  if (name.endsWith('_slab') || name.includes('_slab_')) return 0xa6724a;
   void typeName;
   return undefined;
 }
@@ -210,7 +213,11 @@ export async function loadVoidoIFC(url: string): Promise<VoidoBuilding> {
     walls,
     meshes,
     bbox: finalBbox,
-    outlineMm: { width: 10920, depth: 9100 }, // floorplan.json と同期
+    // 実際の世界 bbox から外形を逆算 (m → mm)
+    outlineMm: {
+      width: Math.round((finalBbox.max.x - finalBbox.min.x) * 1000),
+      depth: Math.round((finalBbox.max.z - finalBbox.min.z) * 1000),
+    },
     rootOffsetM: { x: root.position.x, z: root.position.z },
   };
 }

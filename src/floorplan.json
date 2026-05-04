@@ -1,7 +1,9 @@
 {
-  "$comment": "voido 間取り図の単一の真実源 (Single Source of Truth)。マイホームクラウドの PDF (01_01_名称未設定.pdf) の寸法に厳密準拠。座標系: mm単位、原点=建物南西角、+X=東、+Z=北、+Y=上。",
+  "$comment": "voido 間取り図の単一の真実源 (Single Source of Truth)。マイホームクラウドの PDF (01_01_名称未設定.pdf) の寸法をベースに、現地写真 (Google Maps) で見たプロポーションに合わせて縮小。座標系: mm単位、原点=建物南西角、+X=東、+Z=北、+Y=上。",
   "name": "voido",
   "units": "mm",
+  "$scaleX": "現地写真から建物が PDF よりも横方向に短く見えるため X を 0.78 倍にスケール (10920 → 8500)。各部屋の X 座標も build-ifc.ts で同じ係数で縮める",
+  "scaleX": 0.778,
   "outline": { "width": 10920, "depth": 9100 },
   "levels": [
     {
