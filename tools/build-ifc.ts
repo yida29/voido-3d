@@ -577,22 +577,23 @@ async function main() {
         [plan.outline.width + overhang, 0],
         [plan.outline.width / 2, gableH],
       ]);
-      // 押し出し: Z軸 (建物の奥行=南北方向)
-      // 配置: roofBottomY = 屋根下面、Z=-overhang から D+overhang まで
-      const roofOrigin = t(IFC.IFCCARTESIANPOINT, [[0, 0, roofBottomY]]);
-      const roofPlace2d = t(IFC.IFCAXIS2PLACEMENT3D, [roofOrigin, zDir, xDir]);
-      // しかし extruded direction も zDir (高さ方向) に固定されている。
-      // ここで方向を変えて push するため、別の axis 設定を作る
-      // → 実は IFCEXTRUDEDAREASOLID の extruded direction は3要素で任意指定可能。
-      //   xDir は (1,0,0) なので push 方向を yDir (0,1,0) に。
-      const yDir = t(IFC.IFCDIRECTION, [[0, 1, 0]]);
-      const roofSolid = t(IFC.IFCEXTRUDEDAREASOLID, [roofProf, roofPlace2d, yDir, plan.outline.depth + overhang * 2]);
+      // 切妻屋根を IFC standard 座標 (Z=up, Y=north) で作る。
+      // 三角プロファイルは placement の XY 平面に乗る。妻面 (= 世界 XZ 垂直面)
+      // に置きたいので、placement の axis (local Z) を world -Y (= 北の逆) に
+      // 設定する。これで local Y = local Z × local X = (0,-1,0)×(1,0,0) = (0,0,1)
+      // = world Z (UP) になり、profile の Y 値が高さに対応する。
+      // 押し出し方向は placement local の (0,0,-1) → world +Y (北方向)。
+      const negYDir = t(IFC.IFCDIRECTION, [[0, -1, 0]]); // local Z = world -Y
+      const roofOrigin = t(IFC.IFCCARTESIANPOINT, [[0, -overhang, roofBottomY]]);
+      const roofPlace2d = t(IFC.IFCAXIS2PLACEMENT3D, [roofOrigin, negYDir, xDir]);
+      const extDir = t(IFC.IFCDIRECTION, [[0, 0, -1]]);  // local -Z = world +Y (北)
+      const roofSolid = t(IFC.IFCEXTRUDEDAREASOLID, [roofProf, roofPlace2d, extDir, plan.outline.depth + overhang * 2]);
       const roofRep = t(IFC.IFCSHAPEREPRESENTATION, [
         ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [roofSolid],
       ]);
       const roofShape = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [roofRep]]);
-      // 配置: Y方向に -overhang 動かして奥行に余裕
-      const roofPlace = localPlace(storeyPlace, 0, -overhang, 0);
+      // 配置オフセットは roofOrigin で吸収済みなので storey 基準の素の placement
+      const roofPlace = localPlace(storeyPlace);
       const roofSlab = t(IFC.IFCSLAB, [
         guid(), owner, v(IFC.IFCLABEL, 'roof'), null, null,
         roofPlace, roofShape, null, 'ROOF',
@@ -654,6 +655,10 @@ function applyScaleX(plan: any, s: number): any {
     }
     for (const d of lvl.doors ?? []) {
       if (typeof d.centerX === 'number') d.centerX = Math.round(d.centerX * s);
+      // wall ヒント内の `_x{N}` (内壁の X 座標) も同じ係数でスケール
+      if (typeof d.wall === 'string') {
+        d.wall = d.wall.replace(/(_x)(\d+)/, (_m: string, p: string, n: string) => `${p}${Math.round(parseInt(n, 10) * s)}`);
+      }
     }
     for (const w of lvl.windows ?? []) {
       if (typeof w.centerX === 'number') w.centerX = Math.round(w.centerX * s);
