@@ -59,6 +59,8 @@ function colorByName(name: string | undefined, typeName: string): number | undef
   if (name === 'entry_balcony') return 0x8b5a3c;
   if (name.startsWith('entry_step')) return 0x8b5a3c;
   if (name === 'window') return 0xaad8ff;
+  if (name === 'door_frame') return 0x1a1a1a;    // 玄関ドアの枠: 黒
+  if (name === 'door_glass') return 0xc8e0f0;    // 玄関ドアのガラス: 明るい光通し
   if (name === 'railing') return 0x6b4a30;       // 吹抜の手すり: ダーク木目
   // 外壁を方角ごとに塗り分け (Google Maps 写真より):
   //   南面 (玄関側): 濃いネイビー

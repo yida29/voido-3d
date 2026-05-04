@@ -252,6 +252,9 @@ async function main() {
       edges.map((e) => ({ e, segs: [{ a: e.a, b: e.b }], windows: [] }));
     const slidingPanels: SlidingPanel[] = [];
     const glassPanels: { a: [number, number]; b: [number, number]; sillY: number; height: number }[] = [];
+    // 玄関ドアの黒枠 (4本) と中央ガラス
+    const doorFrames: { a: [number, number]; b: [number, number]; sillY: number; height: number; thickness: number }[] = [];
+    const doorGlass: { a: [number, number]; b: [number, number]; sillY: number; height: number }[] = [];
 
     for (const door of level.doors) {
       // wall ヒント (south/north/east/west) から推測座標を補完。
@@ -317,13 +320,33 @@ async function main() {
         const px2 = rightX + ux * door.width, pz2 = rightZ + uz * door.width;
         slidingPanels.push({ a: [px, pz], b: [px2, pz2], thickness: 30, height: door.height });
       }
-      // 外部ドア (玄関) は開口にガラスドアパネルを差し込む
-      // (voido は写真でもフルガラスドア)
+      // 外部ドア (玄関) は枠+中央ガラスを差し込む。
+      // voido のドアは黒い枠の中央にガラスがある一般的な玄関ドア。
       if (door.external) {
-        glassPanels.push({
-          a: [leftX, leftZ], b: [rightX, rightZ],
-          sillY: 0, height: door.height,
+        const FRAME = 80;          // 枠幅 mm
+        const PANEL_T = 40;        // パネル厚 mm
+        const dW = door.width;
+        const dH = door.height;
+        // 枠4本分を「黒材」(door_frame) として水平 strip で表現:
+        //   - 左枠: a..(a + ux*FRAME) フル高
+        //   - 右枠: (b - ux*FRAME)..b フル高
+        //   - 上枠: 左枠と右枠の間、Y=dH-FRAME..dH
+        //   - 下枠: 左枠と右枠の間、Y=0..FRAME
+        const aL: [number, number] = [leftX, leftZ];
+        const bL: [number, number] = [leftX + ux * FRAME, leftZ + uz * FRAME];
+        const aR: [number, number] = [rightX - ux * FRAME, rightZ - uz * FRAME];
+        const bR: [number, number] = [rightX, rightZ];
+        doorFrames.push({ a: aL, b: bL, sillY: 0,           height: dH,        thickness: PANEL_T });
+        doorFrames.push({ a: aR, b: bR, sillY: 0,           height: dH,        thickness: PANEL_T });
+        doorFrames.push({ a: bL, b: aR, sillY: 0,           height: FRAME,     thickness: PANEL_T });
+        doorFrames.push({ a: bL, b: aR, sillY: dH - FRAME,  height: FRAME,     thickness: PANEL_T });
+        // 中央ガラス: 左枠右端〜右枠左端、Y=FRAME..dH-FRAME
+        doorGlass.push({
+          a: bL, b: aR,
+          sillY: FRAME,
+          height: dH - FRAME * 2,
         });
+        void dW; // kept for clarity, dW is implicitly used via leftX/rightX
       }
     }
 
@@ -482,6 +505,18 @@ async function main() {
     for (const p of slidingPanels) {
       makeWall(t, v, ctx, owner, storeyPlace, origin, zDir, xDir, p.a, p.b, p.thickness, p.height, false)
         .forEach((w) => containedProducts.push(w));
+    }
+
+    // 4.7 玄関ドア: 黒枠 (door_frame) + 中央ガラス (window 色を流用)
+    for (const fr of doorFrames) {
+      makeNamedSlab(t, v, ctx, owner, storeyPlace, origin, zDir, xDir,
+        fr.a, fr.b, fr.thickness, fr.height, fr.sillY, 'door_frame')
+        .forEach((e) => containedProducts.push(e));
+    }
+    for (const g of doorGlass) {
+      makeNamedSlab(t, v, ctx, owner, storeyPlace, origin, zDir, xDir,
+        g.a, g.b, 30, g.height, g.sillY, 'door_glass')
+        .forEach((e) => containedProducts.push(e));
     }
 
     // (窓は前段階で wallSegs.windows に登録済み。後の壁生成ループで開口処理)
