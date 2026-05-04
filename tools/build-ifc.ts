@@ -255,6 +255,8 @@ async function main() {
     // 玄関ドアの黒枠 (4本) と中央ガラス
     const doorFrames: { a: [number, number]; b: [number, number]; sillY: number; height: number; thickness: number }[] = [];
     const doorGlass: { a: [number, number]; b: [number, number]; sillY: number; height: number }[] = [];
+    // 窓の茶色木枠 (4本/窓)
+    const windowFrames: { a: [number, number]; b: [number, number]; sillY: number; height: number; thickness: number }[] = [];
 
     for (const door of level.doors) {
       // wall ヒント (south/north/east/west) から推測座標を補完。
@@ -401,11 +403,27 @@ async function main() {
         const cxOnE = e.a[0] + bestT * (e.b[0] - e.a[0]);
         const czOnE = e.a[1] + bestT * (e.b[1] - e.a[1]);
         const halfW = win.width / 2;
+        // ガラスは開口いっぱいに置く (これで「壁の切り口の暗い帯」が見えなくなる)
         glassPanels.push({
           a: [cxOnE - ux * halfW, czOnE - uz * halfW],
           b: [cxOnE + ux * halfW, czOnE + uz * halfW],
           sillY: win.sillY, height: win.height,
         });
+        // 窓枠 (茶色木枠): ガラスの外側に「フチ」として 4 本貼る。
+        // ガラスより少し外に出して、壁開口の縁を完全に覆う厚みにする。
+        const FRAME_W = 80;          // 枠の幅 mm (見た目の太さ)
+        const FRAME_T = 200;         // 枠厚 (= 外壁厚 OUT_T 180 より厚く、壁開口の暗いフチを完全に覆う)
+        const aL: [number, number] = [cxOnE - ux * halfW, czOnE - uz * halfW];
+        const bR: [number, number] = [cxOnE + ux * halfW, czOnE + uz * halfW];
+        const aLin: [number, number] = [aL[0] + ux * FRAME_W, aL[1] + uz * FRAME_W];
+        const bRin: [number, number] = [bR[0] - ux * FRAME_W, bR[1] - uz * FRAME_W];
+        const winTop = win.sillY + win.height;
+        // 左枠 / 右枠 (フル高)
+        windowFrames.push({ a: aL,   b: aLin, sillY: win.sillY,            height: win.height,           thickness: FRAME_T });
+        windowFrames.push({ a: bRin, b: bR,   sillY: win.sillY,            height: win.height,           thickness: FRAME_T });
+        // 上枠 / 下枠 (左右枠の間)
+        windowFrames.push({ a: aLin, b: bRin, sillY: win.sillY,            height: FRAME_W,              thickness: FRAME_T });
+        windowFrames.push({ a: aLin, b: bRin, sillY: winTop - FRAME_W,     height: FRAME_W,              thickness: FRAME_T });
       }
     }
 
@@ -521,6 +539,12 @@ async function main() {
     for (const g of doorGlass) {
       makeNamedSlab(t, v, ctx, owner, storeyPlace, origin, zDir, xDir,
         g.a, g.b, 30, g.height, g.sillY, 'door_glass')
+        .forEach((e) => containedProducts.push(e));
+    }
+    // 4.8 窓枠 (茶色木枠)
+    for (const fr of windowFrames) {
+      makeNamedSlab(t, v, ctx, owner, storeyPlace, origin, zDir, xDir,
+        fr.a, fr.b, fr.thickness, fr.height, fr.sillY, 'window_frame')
         .forEach((e) => containedProducts.push(e));
     }
 
