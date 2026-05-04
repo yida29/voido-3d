@@ -10,3 +10,10 @@ public/web-ifc-mt.wasm
 
 # 診断スクリプトの出力
 tools/out/
+
+# Playwright MCP の作業ファイル
+.playwright-mcp/
+.playwright-state.json
+
+# 参考写真 (スクラッチ)
+voido-streetview-*.jpeg
