@@ -306,11 +306,16 @@ async function main() {
       const czOnEdge = e.a[1] + bestT * dz;
       const leftX  = cxOnEdge - ux * halfW, leftZ  = czOnEdge - uz * halfW;
       const rightX = cxOnEdge + ux * halfW, rightZ = czOnEdge + uz * halfW;
-      // 既存の segs から、この辺と一致するセグメントを差し替え (ドアが2個並ぶケースは未対応)
-      ws.segs = [
-        { a: e.a, b: [leftX, leftZ] },
-        { a: [rightX, rightZ], b: e.b },
-      ];
+      // ドアを「sillY=0 の窓」として登録すれば、
+      // 後段の壁生成ループが自動的に左右の壁 + ドア上の垂れ壁 (header) を
+      // 作ってくれる。これで「ドアの上が空いて外が見える」問題が解消する。
+      const doorTLen = door.width / len; // edge 全長に対する開口幅 (0..1)
+      ws.windows.push({
+        tStart: Math.max(0, bestT - doorTLen / 2),
+        tEnd:   Math.min(1, bestT + doorTLen / 2),
+        sillY: 0,
+        height: door.height,
+      });
       // ドア上のリンテル (要らなくする: 開けっぱなしなので頭上もフリーに)
       // 引き戸は壁の脇に薄板 (見た目のため) を1枚追加
       if (door.kind === 'sliding') {
