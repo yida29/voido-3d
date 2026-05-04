@@ -43,8 +43,8 @@
         }
       ],
       "doors": [
-        { "$comment": "玄関 (南壁、東寄り、片開 W=910 H=2000)。Google Maps写真ではフルガラスドア",
-          "wall": "south", "centerX": 9320, "width": 910, "height": 2000, "external": true, "kind": "swing" },
+        { "$comment": "玄関 (南壁、東端寄り、片開 W=910 H=2000)。Google Maps写真ではフルガラスドアで、ほぼ東壁に密着している",
+          "wall": "south", "centerX": 10080, "width": 910, "height": 2000, "external": true, "kind": "swing" },
         { "$comment": "階段ホール → 洋室 (内壁、西寄り)",
           "wall": "north_internal_z6597", "centerX": 1024, "width": 1000, "height": 2000, "kind": "swing" },
         { "$comment": "洗面所 (脱衣所) 入口 — 引き戸 W=1365 H=2000",
@@ -144,8 +144,8 @@
         "centerX": 5460, "z": -1500, "width": 10920, "depth": 1500, "topY": 0, "thickness": 200
       },
       "stairs": {
-        "$comment": "3段階段。地面 (Y=-565) からデッキ上面 (Y=0) まで。玄関ドア (centerX=9320) の正面",
-        "centerX": 9320, "z": -2700, "width": 1600, "depth": 1200, "totalRise": 565, "steps": 3
+        "$comment": "3段階段。地面 (Y=-565) からデッキ上面 (Y=0) まで。玄関ドア (centerX=10080) の正面",
+        "centerX": 10080, "z": -2700, "width": 1600, "depth": 1200, "totalRise": 565, "steps": 3
       }
     },
     {
