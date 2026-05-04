@@ -317,6 +317,14 @@ async function main() {
         const px2 = rightX + ux * door.width, pz2 = rightZ + uz * door.width;
         slidingPanels.push({ a: [px, pz], b: [px2, pz2], thickness: 30, height: door.height });
       }
+      // 外部ドア (玄関) は開口にガラスドアパネルを差し込む
+      // (voido は写真でもフルガラスドア)
+      if (door.external) {
+        glassPanels.push({
+          a: [leftX, leftZ], b: [rightX, rightZ],
+          sillY: 0, height: door.height,
+        });
+      }
     }
 
     // 2.5 窓を解析: 該当辺を見つけて wallSegs.windows に登録 + ガラス板を作る
