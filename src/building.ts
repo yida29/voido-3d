@@ -62,13 +62,13 @@ function colorByName(name: string | undefined, typeName: string): number | undef
   if (name === 'window_frame') return 0x8b5a3c;  // 窓枠: 茶色木枠 (entry deck と同じ色)
   if (name === 'door_frame') return 0x1a1a1a;    // 玄関ドアの枠: 黒
   if (name === 'door_glass') return 0xc8e0f0;    // 玄関ドアのガラス: 明るい光通し
+  if (name === 'cantilever_box') return 0x222222; // 玄関上の Cantilever 箱: 黒
+  if (name === 'horizontal_trim') return 0x8b5a3c; // 1F⇔2F 境目の水平トリム: 茶色木製
   if (name === 'railing') return 0x6b4a30;       // 吹抜の手すり: ダーク木目
   // 外壁を方角ごとに塗り分け (Google Maps 写真より):
-  //   南面 (玄関側): 濃いネイビー
-  //   北面: 濃いネイビー
-  //   東/西面: やや明るいグレーブルー (写真3で側面が明るく見える)
-  if (name === 'wall_S' || name === 'wall_N') return 0x3d5575;
-  if (name === 'wall_E' || name === 'wall_W') return 0x4d6580;
+  //   写真の voido は ティール寄りの濃いネイビー (やや青緑)
+  if (name === 'wall_S' || name === 'wall_N') return 0x365064;
+  if (name === 'wall_E' || name === 'wall_W') return 0x456075;
   // 室内をウッド質感に統一 (家の中はナチュラルウッドの内装)
   // 内壁: 明るめのウッド (オーク系、サイディングの板張り)
   if (name === 'wall_inner') return 0xc99565;

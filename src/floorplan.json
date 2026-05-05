@@ -53,8 +53,8 @@
           "wall": "internal_x7964", "centerZ": 8650, "width": 900, "height": 2000, "kind": "swing" }
       ],
       "windows": [
-        { "$comment": "南面 1F: 玄関左の大型掃き出し窓",
-          "wall": "south", "centerX": 5500, "sillY": 200, "width": 2700, "height": 2000 },
+        { "$comment": "南面 1F: 玄関左の超大型ガラス引戸 (写真では床から天井近くまで、幅 2400 程度)。建物中央〜西寄りに配置",
+          "wall": "south", "centerX": 4200, "sillY": 100, "width": 2700, "height": 2700 },
         { "$comment": "西面 1F: 小窓",
           "wall": "west", "centerZ": 4500, "sillY": 1000, "width": 900, "height": 1100 },
         { "$comment": "北面 1F: 浴室の小窓",
@@ -109,10 +109,12 @@
           "wall": "internal_z4550_east", "centerX": 8872, "width": 900, "height": 2000 }
       ],
       "windows": [
-        { "$comment": "南面 2F: 縦長窓×2 (写真3で右寄り)",
-          "wall": "south", "centerX": 8500, "sillY": 800, "width": 600, "height": 1200 },
-        { "$comment": "南面 2F: 縦長窓×2",
-          "wall": "south", "centerX": 9700, "sillY": 800, "width": 600, "height": 1200 },
+        { "$comment": "南面 2F: 吹抜上の小窓 (左)。写真では正方形に近い小窓",
+          "wall": "south", "centerX": 2400, "sillY": 1100, "width": 800, "height": 1100 },
+        { "$comment": "南面 2F: 中央の小窓",
+          "wall": "south", "centerX": 5300, "sillY": 1100, "width": 800, "height": 1100 },
+        { "$comment": "南面 2F: 玄関上の小窓 (右)",
+          "wall": "south", "centerX": 8000, "sillY": 1100, "width": 800, "height": 1100 },
         { "$comment": "西面 2F: 縦長窓×2",
           "wall": "west", "centerZ": 3000, "sillY": 1000, "width": 500, "height": 1200 },
         { "$comment": "西面 2F: 縦長窓×2",
@@ -147,6 +149,18 @@
         "$comment": "3段階段。地面 (Y=-565) からデッキ上面 (Y=0) まで。玄関ドア (centerX=10080) の正面",
         "centerX": 10080, "z": -2700, "width": 1600, "depth": 1200, "totalRise": 565, "steps": 3
       }
+    },
+    {
+      "$comment": "玄関上の黒い Cantilever 箱バルコニー (写真より)。2F の南面、玄関ドアの上に張り出す。東端は東壁に揃える",
+      "type": "cantilever_box",
+      "centerX": 9700, "z": -700, "width": 2200, "depth": 700,
+      "bottomY": 4040, "height": 1100,
+      "color": "black"
+    },
+    {
+      "$comment": "1F⇔2F 境目の水平木製トリム (写真の南面に走っている)。建物外周をぐるっと巻く茶色の薄い帯",
+      "type": "horizontal_trim",
+      "y": 3900, "thickness": 80, "depth": 60
     },
     {
       "$comment": "基礎: 1F床下を埋める。外壁 (厚 OUT_T=180mm) の外側面まで覆う必要があるので、外形 +90mm を四方に出して 11100×9280 にする",

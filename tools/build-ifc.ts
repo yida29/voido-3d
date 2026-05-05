@@ -553,6 +553,57 @@ async function main() {
     // 5. 1F のときだけ、external_features (玄関アプローチ・基礎など) を生成
     if (level.name === '1F' && Array.isArray((plan as any).external_features)) {
       for (const f of (plan as any).external_features as any[]) {
+        // 玄関上の Cantilever 箱バルコニー: 黒い直方体を 2F 南面から張り出す
+        if (f.type === 'cantilever_box') {
+          const x0 = f.centerX - f.width / 2;
+          const cPoly: [number, number][] = [
+            [x0, f.z], [x0 + f.width, f.z],
+            [x0 + f.width, f.z + f.depth], [x0, f.z + f.depth],
+          ];
+          const cProf = makePolygonProfile(t, cPoly);
+          const cPlace = localPlace(storeyPlace, 0, 0, f.bottomY);
+          const cPlace2d = t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]);
+          const cSolid = t(IFC.IFCEXTRUDEDAREASOLID, [cProf, cPlace2d, zDir, f.height]);
+          const cRep = t(IFC.IFCSHAPEREPRESENTATION, [
+            ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [cSolid],
+          ]);
+          const cShape = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [cRep]]);
+          const cSlab = t(IFC.IFCSLAB, [
+            guid(), owner, v(IFC.IFCLABEL, 'cantilever_box'), null, null,
+            cPlace, cShape, null, 'BASESLAB',
+          ]);
+          containedProducts.push(cSlab);
+        }
+
+        // 1F⇔2F 境目の水平木製トリム: 建物外周をぐるっと巻く茶色の薄い帯
+        if (f.type === 'horizontal_trim') {
+          const W = plan.outline.width, D = plan.outline.depth;
+          const e = f.depth || 60; // 壁から外に出る量
+          const tPoly: [number, number][] = [
+            [-e, -e], [W + e, -e],
+            [W + e, D + e], [-e, D + e],
+            [-e, -e + 0.001], // close (ring not supported, use thick rect)
+          ];
+          // 簡易: 外周いっぱいの矩形 (= 屋根スラブと同じ作り)
+          const ring: [number, number][] = [
+            [-e, -e], [W + e, -e], [W + e, D + e], [-e, D + e],
+          ];
+          const tProf = makePolygonProfile(t, ring);
+          const tPlace = localPlace(storeyPlace, 0, 0, f.y);
+          const tPlace2d = t(IFC.IFCAXIS2PLACEMENT3D, [origin, zDir, xDir]);
+          const tSolid = t(IFC.IFCEXTRUDEDAREASOLID, [tProf, tPlace2d, zDir, f.thickness]);
+          const tRep = t(IFC.IFCSHAPEREPRESENTATION, [
+            ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [tSolid],
+          ]);
+          const tShape = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [tRep]]);
+          const tSlab = t(IFC.IFCSLAB, [
+            guid(), owner, v(IFC.IFCLABEL, 'horizontal_trim'), null, null,
+            tPlace, tShape, null, 'BASESLAB',
+          ]);
+          containedProducts.push(tSlab);
+          void tPoly;
+        }
+
         // 基礎: bottomY〜topY の厚みを持つ矩形スラブ
         if (f.type === 'foundation') {
           const x0 = f.x;
@@ -753,6 +804,10 @@ function applyScaleX(plan: any, s: number): any {
     }
     if (ef.type === 'foundation') {
       if (typeof ef.x === 'number') ef.x = Math.round(ef.x * s);
+      if (typeof ef.width === 'number') ef.width = Math.round(ef.width * s);
+    }
+    if (ef.type === 'cantilever_box') {
+      if (typeof ef.centerX === 'number') ef.centerX = Math.round(ef.centerX * s);
       if (typeof ef.width === 'number') ef.width = Math.round(ef.width * s);
     }
   }
