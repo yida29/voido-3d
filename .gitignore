@@ -16,4 +16,4 @@ tools/out/
 .playwright-state.json
 
 # 参考写真 (スクラッチ)
-voido-streetview-*.jpeg
+voido-*.jpeg
