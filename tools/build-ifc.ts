@@ -635,36 +635,28 @@ async function main() {
       }
     }
 
-    // 6. 最上階なら切妻屋根を追加 (棟は南北方向、東西に下る)
-    //    写真3で voido は片流れに近い切妻屋根
+    // 6. 最上階の屋根: voido はフラットルーフ (片流れわずか) なので、
+    //    水平な薄い slab + 軒の出 (overhang) のみで表現する。
+    //    Street View で見ると南北とも壁の上端ほぼ水平で、切妻ではない。
     if (!nextLevel) {
-      const overhang = 90;          // 軒の出 mm
-      const gableH = 1500;          // 棟の高さ (壁上端からの差)
+      const overhang = 200;          // 軒の出 mm (パラペットの少し外まで)
+      const roofThk = 200;           // 屋根スラブ厚 mm
       const roofBottomY = level.ceilingHeight;
-      // 三角プロファイル (XY平面)
-      // 底辺: (-overhang, 0) -- (W+overhang, 0)
-      // 頂点: (W/2, gableH)
-      const roofProf = makePolygonProfile(t, [
-        [-overhang, 0],
-        [plan.outline.width + overhang, 0],
-        [plan.outline.width / 2, gableH],
-      ]);
-      // 切妻屋根を IFC standard 座標 (Z=up, Y=north) で作る。
-      // 三角プロファイルは placement の XY 平面に乗る。妻面 (= 世界 XZ 垂直面)
-      // に置きたいので、placement の axis (local Z) を world -Y (= 北の逆) に
-      // 設定する。これで local Y = local Z × local X = (0,-1,0)×(1,0,0) = (0,0,1)
-      // = world Z (UP) になり、profile の Y 値が高さに対応する。
-      // 押し出し方向は placement local の (0,0,-1) → world +Y (北方向)。
-      const negYDir = t(IFC.IFCDIRECTION, [[0, -1, 0]]); // local Z = world -Y
-      const roofOrigin = t(IFC.IFCCARTESIANPOINT, [[0, -overhang, roofBottomY]]);
-      const roofPlace2d = t(IFC.IFCAXIS2PLACEMENT3D, [roofOrigin, negYDir, xDir]);
-      const extDir = t(IFC.IFCDIRECTION, [[0, 0, -1]]);  // local -Z = world +Y (北)
-      const roofSolid = t(IFC.IFCEXTRUDEDAREASOLID, [roofProf, roofPlace2d, extDir, plan.outline.depth + overhang * 2]);
+      const x0 = -overhang;
+      const z0 = -overhang;
+      const x1 = plan.outline.width + overhang;
+      const z1 = plan.outline.depth + overhang;
+      const roofPoly: [number, number][] = [
+        [x0, z0], [x1, z0], [x1, z1], [x0, z1],
+      ];
+      const roofProf = makePolygonProfile(t, roofPoly);
+      const roofPlaceOrigin = t(IFC.IFCCARTESIANPOINT, [[0, 0, roofBottomY]]);
+      const roofPlace2d = t(IFC.IFCAXIS2PLACEMENT3D, [roofPlaceOrigin, zDir, xDir]);
+      const roofSolid = t(IFC.IFCEXTRUDEDAREASOLID, [roofProf, roofPlace2d, zDir, roofThk]);
       const roofRep = t(IFC.IFCSHAPEREPRESENTATION, [
         ctx, v(IFC.IFCLABEL, 'Body'), v(IFC.IFCLABEL, 'SweptSolid'), [roofSolid],
       ]);
       const roofShape = t(IFC.IFCPRODUCTDEFINITIONSHAPE, [null, null, [roofRep]]);
-      // 配置オフセットは roofOrigin で吸収済みなので storey 基準の素の placement
       const roofPlace = localPlace(storeyPlace);
       const roofSlab = t(IFC.IFCSLAB, [
         guid(), owner, v(IFC.IFCLABEL, 'roof'), null, null,
